@@ -1,0 +1,70 @@
+/* init_idt.h - Holds constants and various different macros that 
+init_idt.c uses
+*/
+
+
+#ifndef _INIT_IDT_H
+#define _INIT_IDT_H
+
+#include "lib.h"
+
+#define BIT_ON			1
+#define BIT_OFF			0
+#define DPL_KERNEL		0
+#define DPL_USER		3
+
+//Initializes the Interrupt Descriptor Table
+void init_idt();
+
+//Initializes intel interrupts inside Interrupt Descriptor table
+void setup_intel_interrupts(uint8_t vector,uint32_t* handler);
+
+//Initializes Pic IRQ inside Interrupt Descriptor table
+void setup_irq_interrupts(uint8_t vector, uint32_t* handler);
+
+//Initializes system calls inside Interrupt Descriptor table
+void setup_system_calls(uint8_t wvector, uint32_t* handler);
+
+extern uint32_t divide_error;
+extern uint32_t debug;
+extern uint32_t nmi;
+extern uint32_t int3;
+extern uint32_t overflow;
+extern uint32_t bounds;
+extern uint32_t invalid_op;
+extern uint32_t device_not_available;
+extern uint32_t doublefault_fn;
+extern uint32_t coprocessor_segment_overrun;
+extern uint32_t invalid_TSS;
+extern uint32_t segment_not_present;
+extern uint32_t stack_segment;
+extern uint32_t general_protection;
+extern uint32_t page_fault;
+extern uint32_t floating_point;
+extern uint32_t alignment_check;
+extern uint32_t machine_check;
+extern uint32_t simd_coprocessor_error;
+
+//Pic master irq line interrus
+extern uint32_t master_irq0;
+extern uint32_t keyboard_handler;
+extern uint32_t master_irq2;
+extern uint32_t master_irq3;
+extern uint32_t master_irq4;
+extern uint32_t master_irq5;
+extern uint32_t master_irq6;
+extern uint32_t master_irq7;
+
+//Pic slave irq line interrus
+extern uint32_t rtc_handler;
+extern uint32_t slave_irq1;
+extern uint32_t slave_irq2;
+extern uint32_t slave_irq3;
+extern uint32_t slave_irq4;
+extern uint32_t slave_irq5;
+extern uint32_t slave_irq6;
+extern uint32_t slave_irq7;
+
+extern uint32_t system_call;
+
+#endif /* _INIT_IDT_H */

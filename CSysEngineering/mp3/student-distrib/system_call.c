@@ -1,0 +1,646 @@
+//system_call.c where all the system calls are handled
+#include "system_call.h"
+
+static void init_pcb_struct(pcb_t* _current_process);
+static void setup_stdin_stdout(pcb_t* process);
+static void init_file_ops();
+static void init_structs_globl();
+static void	init_shell_terminal();
+
+
+pcb_t running_process[8];
+int which_process;
+static f_ops_t terminal_ops;
+static f_ops_t rtc_ops;
+static f_ops_t fs_ops;
+static f_ops_t fd_ops;
+
+/* 
+ * _halt
+ * Description: Halts the program being executed
+ * Inputs: status - value that needs to be returned to the execute call
+ * Outputs: none
+ * Returns: returns a 32 bit int of status
+ * Side Effects: returns a 32 value of the status argument back to the parent process
+ */
+int32_t _halt (uint8_t status)
+{
+	int32_t _status, i;
+	uint32_t previous_process_esp = current_process->return_esp;
+	uint32_t previous_process_ebp = current_process->return_ebp; 
+	pcb_t* delete_pcb;
+	
+	//sign extends the status argument
+	_status = (int32_t)status;
+
+	//current_process NULL means there was a BIG problem.  How can a process call halt if there was never a process
+	if (current_process == NULL)
+	{
+		return -1;
+	}
+
+	//Think of this in terms of a linked list.  If the parent is not NULL then the process
+	//has a parent thus it is not the first spawned process. If the process child has no node, then
+	//this process has both a parent and a child and it means that it is sitting in the middle somewhere.
+	//Lastly, if the process has a parent but not a child, then it is at the end of the list 
+	if(current_process->parent != NULL)
+	{
+		if(current_process->child != NULL)
+		{
+			running_process[current_process->parent->pid].child = current_process->child;
+			running_process[current_process->child->pid].parent= current_process->parent;
+		}
+		else
+		{
+			running_process[current_process->parent->pid].child = NULL;
+		}
+	}
+	
+	//Stores a pointer to the current process because we are going to reset current process
+	delete_pcb = current_process;
+
+	//The current process does not have a parent which means it was the first process that was spawned in the list
+	if(current_process->parent == NULL)
+	{
+		process_switch_page_dir(-1); //sets CR3 to point to original page dir
+		tss.esp0 = KSTACK_START-2*FOUR_KB*(0); //esp0 points to 8MB
+		current_process=NULL; // No running processes
+	}
+	else
+	{
+		process_switch_page_dir(current_process->parent->pid);	//Sets CR3 to point to parents PID number
+		tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->parent->pid+1);//esp0 points to 8MB minus offset of parents PID
+		current_process = &running_process[current_process->parent->pid]; // Reset the running process to its parent
+		for(i=2; i<8; i++)
+		{
+			_close(i);
+		}
+		init_pcb_struct(delete_pcb); 	// Delete the processes pcb that just finished
+	}
+
+
+	// Prepares the argument to return back to the parent process.  Restores the esp and ebp of the previous stack frame 
+	// prior to execute so the program can return to the parent process
+   asm volatile("movl %0, %%eax;":/*No output operands */: "m" (_status));
+	asm volatile("mov %%bh, %0":"=c"(status) :);
+	if (status & 0x1)
+	{
+		asm volatile("mov %%bl, %0":"=c"(status):);
+		if (_status == 0)
+		{
+			_status = 256;
+			   asm volatile("movl %0, %%eax;":/*No output operands */: "m" (_status));
+		}
+	}
+   asm volatile("movl %0, %%esp;":/*No output operands */: "m"(previous_process_esp));
+   asm volatile("movl %0, %%ebp;":/*No output operands */: "m"(previous_process_ebp));
+   asm volatile("leave");
+   asm volatile("ret");
+
+   return _status;  // NEVER EVER WILL MAKE IT HERE, just used to compiler won't bitch
+}
+
+/* 
+ * _execute
+ * Description: attemps to load and execute a new program, handing off processor to new program until it terminates
+ * Inputs: command - string of words separated by spaces
+ * 						- first word is name of executable
+ *						- rest of words w/o spaces are arguments to be passed in on call from _getargs
+ * Outputs: none
+ * Returns: -1 - command can't be executed
+ *			256 - exception occurs
+ *			0-255 - program executes a _halt system call and returns whatever is passed into _halt
+ * Side Effects: hands off processor to new process
+ */
+int32_t _execute (const uint8_t* command)
+{
+	uint8_t cmd[BUFF_SIZE];
+	uint8_t xfile_name[BUFF_SIZE], file_header[FILE_HEADER_SIZE];
+	uint32_t process_index,buff_index,copy_buff_index,arg_buff_index, e_entry = 0, flag = 0, iterator;
+	dentry_t new_dentry;
+	pcb_t* next_process = NULL;
+
+	//Command is not valid
+	if (command == NULL)
+	{
+		return -1;
+	}
+
+	// Copies the command name into another buffer
+	strncpy((int8_t*)cmd,(int8_t*)command, BUFF_SIZE);
+
+	/* Get the name of the possible executable file */
+	buff_index = 0;
+	copy_buff_index = 0;
+	while(cmd[buff_index] != '\n' && cmd[buff_index] != '\0')
+	{
+		if (flag == 0 && cmd[buff_index] == ' ')
+		{
+			buff_index++;
+		}
+		else if (flag == 1 && cmd[buff_index] == ' ')
+		{
+			break;
+		}	
+		else
+		{
+			flag = 1;
+			xfile_name[copy_buff_index] = cmd[buff_index];
+			buff_index++;
+			copy_buff_index++;
+		}
+	}
+	xfile_name[copy_buff_index] = '\0';
+
+	/* check to see whether an executable file */
+	if (read_dentry_by_name(xfile_name, &new_dentry) == -1)
+	{
+		return -1;
+	}
+	
+	// Checks to see that the file is a regular file. A rtc or directory file should never execute
+	if (new_dentry.file_type != 2)
+	{
+		return -1;
+	}
+
+ 	// Populates the file header buffer
+ 	read_data(new_dentry.inode_num, 0, file_header, FILE_HEADER_SIZE);
+
+    /* check to see if the file is an executable; first 4 bytes should read 0x7F, E, L, F */
+    if (!(file_header[0] == 0x7F && file_header[1] == 'E' && file_header[2] == 'L' && file_header[3] == 'F'))
+	{
+		return -1;
+	}
+
+	cli();
+	//Set parent to be -1 if it is the first process(shell) or set parent to be the process id of the process that called execute (shell calls ls)
+	if(current_process == NULL)
+	{
+		//This NEEDS to make it here if the current_process is null.  This condition is hit ONLY when another shell(without a parent) needs to be executed
+		next_process = &running_process[which_process];
+		next_process->occupado = 1;
+		next_process->pid = which_process;
+		next_process->child = NULL;
+		next_process->parent = NULL;
+		process_index = which_process;
+	}
+	else
+	{
+	process_index =3;
+		while(1)
+		{
+			// No more processes can run
+			if(process_index >= NUM_PROCESSES)
+				return -1;
+			// Process can be ran
+			if(running_process[process_index].occupado == 0)
+			{
+				next_process = &running_process[process_index];
+				next_process->occupado = 1;
+				next_process->pid = process_index;
+				current_process->child = next_process;
+				next_process->parent = current_process;
+				next_process->terminal = current_process->terminal;
+				break;
+			}
+			process_index++;
+		}
+	}
+sti();
+
+	/* put arguments into appropriate form in case call from _getargs occurs */
+	arg_buff_index = 0;
+	while(cmd[buff_index] != '\n' && cmd[buff_index] != '\0')
+	{
+		if (cmd[buff_index] != ' ')
+		{
+			(next_process->argument)[arg_buff_index] = cmd[buff_index];
+			arg_buff_index++;
+			buff_index++;
+		}
+		else
+		{
+			buff_index++;
+		}
+	}
+	(next_process->argument)[arg_buff_index] = '\0';
+
+	// Sets up stdin_stdout file descriptors for the new process	
+	setup_stdin_stdout(next_process);
+
+//The new running process will now save the registers just proir to running so we can return when halt is called
+	asm volatile("movl %%ebp, %0" : "=m" (next_process->return_ebp));
+	asm volatile("movl %%esp, %0" : "=m" (next_process->return_esp));
+
+// Makes the current process the process that will be ran next
+	current_process = next_process;
+	asm volatile("mov %%CR3, %0":"=a"(current_process->registers.cr3));
+
+
+//Switch the page directory so the new process can run
+	process_switch_page_dir(process_index);
+ 	
+/* grab the memory address from file header of the entry point of where the process starts executing */
+    for (iterator = START_ADDR_OFFSET; iterator >= 0; iterator--)
+    {
+    	e_entry += file_header[iterator + PROCESS_START_ADDR];
+    	if (iterator == 0)
+    		break;
+    	e_entry = e_entry << BYTE;
+    }
+
+    //Load executable file into memory
+    read_data(new_dentry.inode_num, 0, (uint8_t*)PROGRAM_IMAGE, BIG_NUMBER);
+
+/* In line assembly to save old register values so we can restore stack frame eventually */
+
+    cli();
+    asm volatile ("pushl %0 \n" :: "r"(USER_DS));
+    asm volatile ("pushl %0 \n" :: "r"(MB_128+FOUR_MB-4));
+    asm volatile ("pushfl");
+    asm volatile ("orl $0x200, (%%esp)" ::);
+    asm volatile ("pushl %0 \n" :: "r"(USER_CS));
+    asm volatile ("pushl %0 \n" :: "r"(e_entry));
+ 	tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->pid+1);
+    asm volatile ("iretl");
+
+	return 0;
+}
+/* 
+ * _read
+ * Description: Reads data from the keyboard, a device(rtc), or a directory. In case of the keyboard, read should return the data
+ *				from one line that has been terminated by pressing enter, or as much fits in the buffer for one such line. In the case of a file,
+ *				data should be read to the end of the file or teh end of the buffer provided,whichever occurs sooner.  In the case of reads from a 
+ *				directory, only the filename should be provided, and subsequent reads should read successive directory entries until the last is reached
+ *				In case of the RTC, the call will alwyas return 0 but only after an interrupt has occured
+ * Inputs:fd - file to read from (keyboard,device, or directory)
+ *		  buf - populated with data read from the file (keyboard,device, or directory)
+ *		  nbytes - number of bytes written to the buffer, read from the file (keyboard,device, or directory)
+ * Outputs: none
+ * Returns: FOR FILE and DIRECTORY - returns the number of bytes read and copyied to the buffer, or 0 to indicate the end of the file. Returns -1 on failure
+ *			FOR KEYBOARD - returns the number of bytes read from the keyboard. 
+ *			FOR RTC - returns 0
+ *			
+ * Side Effects: 
+ */
+int32_t _read (int32_t fd,void* buf,int32_t nbytes)
+{
+	//Possiblie issue: open is never called on this file descriptor,
+	//thus the flags bit will always be zero and we will always 
+	//return -1
+	if (buf == NULL || fd < 0 || fd > 7 || !((current_process->fid)[fd]).flags || fd == 1)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->read(fd, buf, nbytes);
+}
+/* 
+ * _write
+ * Description: Writes data to the terminal or to the rtc device.  With terminal, all data should be displayed to the screen immediately
+ * 				With rtc, the system call should always accept only a 4-byte integer specifying the interrupt rate in Hz, which it then 
+ *				sets the rate of periodic interrupts from the RTC.  
+ * Inputs: fd - file descriptor specifying which file to write to
+ *		   buf - terminal will display buffer to screen, rtc will use 4 byte buffer to change frequency of interrupts 
+ *		   nbytes - number of bytes to write.  for RTC the nbytes field will always be 4. 
+ * Outputs: none
+ * Returns: returns -1 when writing to a regular file because system is read only. returns -1 if fd is out of range or trying to write to an invalid file descriptor.
+ *			returns number of bytes written to buffer when successful
+ * Side Effects: Terminal will write to the screen, RTC will change the frequency of the RTC's periodic interrupts
+ */
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes)
+{
+	if (buf == NULL || fd <= 0 || fd > 7 || !((current_process->fid)[fd]).flags)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->write(fd, buf, nbytes);
+}
+/* 
+ * _open
+ * Description: Provides access to the file system.  Finds the directory entry corresponding to the names file, allocates an unused file descriptor, and sets up any data necessary to handle
+ *				the given type of file(directory,RTC device, or regular file). 
+ * Inputs: filename - file to search for in the list of directory entries
+ * Outputs: none
+ * Returns: -1 if the file does not exist or there are no descriptors free. Returns 0 on success
+ * Side Effects: 
+ */
+int32_t _open (const uint8_t* filename)
+{
+	dentry_t dt;
+	uint32_t temp;
+	f_desc_t desc;
+	int i;
+	int8_t pcb_num = -1;
+    if (filename == NULL) {
+        return -1;
+    }
+	temp = read_dentry_by_name(filename, &dt);
+	for (i = 0; i < 8; ++i)
+	{
+		if (!((current_process->fid)[i]).flags)			//<--------------------Flags of 1 will evaluate true but flags of 0 means its open
+		{
+			pcb_num = i;
+			//Modified for testing...
+			//(current_process->fid)[i].flags = 1;
+			//desc = (current_process->fid)[i];
+			break;
+		}
+	}
+	if (temp == -1 || pcb_num == -1 || pcb_num == 0 || pcb_num == 1)
+	{
+		return -1;
+	}
+	//this is very ugly but we use it to find the address of the corresponding inode, hope it works
+	desc.flags = 1;
+	desc.offs = 0;
+	switch(dt.file_type)
+	{
+		case _RTC:
+		{
+			desc.inode = NULL;
+			desc.fops = & rtc_ops;
+			break;
+		}
+		case _FIL:
+		{
+			desc.inode = calc_inode_ptr(&dt);
+			desc.fops = & fs_ops;
+			break;
+		}
+		case _DIR:
+		{
+			desc.inode = NULL;
+			desc.fops = & fd_ops;
+			break;
+		}
+		default:
+		{
+			return -1;
+		}
+	}
+	desc.fops->open();
+	//Commented out for testing
+	(current_process->fid)[(uint32_t)pcb_num] = desc;
+	return pcb_num;
+}
+/* 
+ * _close
+ * Description: closes the specified file descriptor and makes it available for return from later calls to open
+ * Inputs: fd - file descriptor to close
+ * Outputs: none
+ * Returns: returns -1 if fd is out of range or trying to close an invalid file descriptor, returns 0 on success
+ * Side Effects: closes the file descriptor specified.  Allows the process to then use this file descriptor later if needed
+ */
+int32_t _close (int32_t fd)
+{
+	if(current_process == NULL || fd <= 1 || fd > 7 || ((current_process->fid)[fd]).flags == 0)
+		return -1;
+	((current_process->fid)[fd]).fops = NULL;
+	((current_process->fid)[fd]).inode = NULL;
+	((current_process->fid)[fd]).offs = 0;
+	((current_process->fid)[fd]).flags = 0;
+	return 0;
+}
+/* 
+ * _getargs
+ * Description: Reads the programs command line arguments into a user-level buffer. If the arguments and a terminal NULL do not fine in the buffer, return -1.	 
+ * Inputs:  buf - buffer that will get populated with the argument
+ *			nbytes - length in bytes of the argument
+ * Outputs: none
+ * Returns: -1 on failure to read args, 0 on successfully reading arguments
+ * Side Effects: Analyzes the argument and populates the user-level buffer
+ */
+ int32_t _getargs (uint8_t* buf, uint32_t nbytes)
+{
+       int i;
+       if(buf == NULL)
+       {
+               return -1;
+       }
+       for(i = 0;i<BUFF_SIZE;i++)
+       {
+               if(current_process->argument[i] == '\0')
+               {
+                       memcpy(buf,current_process->argument,BUFF_SIZE);
+                       return 0;
+               }
+       }
+       return -1;
+}
+/* 
+ * _vidmap
+ * Description: Maps text-mode video memory into user space at a pre-set virtual address, 
+ * 				assuming that the address is valid (within the single user-level page)
+ * Inputs: screen_start - pointer to a pointer in which we want to map the video memory into
+ *						  the user level page
+ * Outputs: NONE
+ * Returns: address it stores the video memory at
+ * Side Effects: Creates a new 4kB page for the current process inside the process's user space 
+ */
+int32_t _vidmap (uint8_t** screen_start)
+{
+    if (screen_start == NULL) {
+        return -1;
+    }
+	if ((uint32_t)screen_start < MB_128 || (uint32_t)screen_start > (MB_128+FOUR_MB))
+	{
+		return -1;
+	}
+	*screen_start = current_process->terminal->storage;
+
+	return 0;
+
+}
+/* 
+ * _set_handler
+ * Description: EXTRA CREDIT
+ * Inputs:  EXTRA CREDIT
+ * Outputs: EXTRA CREDIT
+ * Returns: EXTRA CREDIT
+ * Side Effects: Extra CREDIT
+ */
+int32_t _set_handler (int32_t signum, void* handler_address)
+{
+	return -1;
+}
+/* 
+ * _sigreturn
+ * Description:  EXTRA CREDIT
+ * Inputs: Extra CREDIT
+ * Outputs:  Extra CREDIT
+ * Returns:  Extra CREDIT
+ * Side Effects: Extra CREDIT
+ */
+int32_t _sigreturn (void)	
+{
+	return -1;
+}
+
+/* 
+ * init_pcb_struct
+ *   DESCRIPTION: Initializes all the pcb structs.  Also called during a halt to clear the pcb struct
+ *   INPUTS: _current_process - current process that is running.
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: resets the pcb struct due to ending of program or initializes the structure
+ */
+
+void init_pcb_struct(pcb_t* _current_process)
+{
+	int i;
+		_current_process->occupado = 0;
+		_current_process->registers.eax = 0;
+		_current_process->registers.ebx = 0;
+		_current_process->registers.ecx = 0;
+		_current_process->registers.edx = 0;
+		_current_process->registers.edi = 0;
+		_current_process->registers.esi = 0;
+		_current_process->registers.ebp = 0;
+		_current_process->registers.esp = 0;
+		_current_process->registers.cr3 = 0;
+		_current_process->parent = NULL;
+		_current_process->child = NULL;
+		_current_process->pid = 0;
+		for(i = 0;i<BUFF_SIZE;i++)
+		{
+			_current_process->argument[i] = 0;
+		}
+		for(i=0;i<NUM_FID;i++)
+		{
+			_current_process->fid[i].fops = NULL;
+			_current_process->fid[i].inode = NULL;
+			_current_process->fid[i].offs = 0;
+			_current_process->fid[i].flags = 0;	
+		}
+		_current_process->return_address = 0;
+		_current_process->fail_address = 0;
+		_current_process->return_address = 0;
+		_current_process->failure = 0;
+		_current_process->terminal = NULL;
+}
+
+/* 
+ * init_structs_globl
+ *   DESCRIPTION: Initializes the global variables and calls init_pcb_stucts to initialize all of the pcb_t structures
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Initializes global variables and pcb_structs
+ */
+void init_structs_globl()
+{
+	int i;
+	current_process = NULL;
+	for(i = 0; i < NUM_PROCESSES; i++)
+	{
+		init_pcb_struct(&running_process[i]);
+	}
+}
+
+/* 
+ * init_file_ops
+ *   DESCRIPTION: Initiates the file ops and defines the default file descriptors ( rtc, terminal,file system, file system directory)
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Initializes known file ops to point to their given functions
+ */
+void init_file_ops()
+{
+	//initialize the file_ops
+	rtc_ops.open  = rtc_open;
+	rtc_ops.close = rtc_close;
+	rtc_ops.read  = rtc_read;
+	rtc_ops.write = rtc_write;
+	terminal_ops.open  = terminal_open;
+	terminal_ops.close = terminal_close;
+	terminal_ops.read  = terminal_read;
+	terminal_ops.write = terminal_write;
+	fs_ops.open  = fs_open;
+	fs_ops.close = fs_close;
+	fs_ops.read  = fs_read;
+	fs_ops.write = fs_write;
+	fd_ops.open  = fs_dir_open;
+	fd_ops.close = fs_dir_close;
+	fd_ops.read  = fs_dir_read;
+	fd_ops.write = fs_dir_write;
+}
+
+
+/* 
+ * setup_stdin_stdout
+ *   DESCRIPTION: Sets up the first two file descriptors when a new process is created
+ *   INPUTS: pcb_t* process - pointer to the pcb_t structure that holds the file descriptor.  
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Initializes the stdin and stdout file descriptors associated with a specific pcb_t struct
+ */
+void setup_stdin_stdout(pcb_t* process)
+{
+	process->fid[0].fops = &terminal_ops;
+	process->fid[0].inode = NULL;
+	process->fid[0].offs = 0;
+	process->fid[0].flags = 1;
+	process->fid[1].fops = &terminal_ops;
+	process->fid[1].inode = NULL;
+	process->fid[1].offs = 0;
+	process->fid[1].flags = 1;
+}
+
+
+/* 
+ * init_system_calls
+ *   DESCRIPTION: Calls multiple functions that initialize pcb's,sets up the global variables, and initializes 
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Initializes known file ops to point to their given functions
+ */
+void init_system_calls()
+{
+	init_structs_globl();
+	init_file_ops();
+	init_shell_terminal();
+}
+
+/* 
+ * init_shell_terminal
+ *   DESCRIPTION:Initialize the first 3 running processes to point to the 3 terminals.
+ * 				 The first 3 processes will ALWAYS be a shell process therfore I am forcing
+ * 				the processes to point to my terminal array.  The child will then inherit
+ *				 the terminal of its parent and all of its associated properties
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Populates first 3 processes terminal pointers to point to allocated array of terminals
+ */
+void init_shell_terminal()
+{
+	int i;
+	for(i=0;i<NUM_TERM;i++)
+	{
+		running_process[i].terminal = &terminal[i];
+	}
+}
+
+/* 
+ * execute_shell
+ *   DESCRIPTION: Scheduling calls this function 3 times to set up 3
+ *				  terminals upon startup of the system.  The first 3 PIT interrupts
+ *				  will cause the scheduler to calls this function.  I enclosed in a while loop
+ *				  in case a shell is exited without a parent.  The function will then call execute shell
+ *				  again to rerun the parent shell
+ *   INPUTS: none
+ *   OUTPUTS: none
+ *   RETURN VALUE: none
+ *   SIDE EFFECTS: Starts 3 shell processes(each without a parent) and keeps the processes running forever
+ */
+void execute_shell()
+{
+	while(1)
+	{
+		uint8_t shell[] = "shell\n";
+		_execute(shell);
+	}
+}

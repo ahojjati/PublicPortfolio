@@ -1,0 +1,9 @@
+rtfreed2 total : 98/100
+Testing task1	24/26	
+	*Passed*
+
+root authority certificate wrong for website 3	
+Testing task2	40/40	
+	*Passed*	
+Testing task3	34/34	
+	*Passed*	

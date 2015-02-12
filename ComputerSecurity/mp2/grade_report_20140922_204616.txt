@@ -1,0 +1,10 @@
+rtfreed2 total : 110/100
+Testing task1	20/20	
+	*Passed*	
+Testing task2	25/25	
+	*Passed*	
+Testing task3	25/25	
+	*Passed*	
+Testing task4	30/30	
+	*Passed*	
+Testing task5(bonus)	10/10	You found the correct input string: THUTTER UNDERTURF	

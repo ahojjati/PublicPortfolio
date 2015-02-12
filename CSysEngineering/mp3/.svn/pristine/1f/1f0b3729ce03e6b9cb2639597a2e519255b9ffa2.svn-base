@@ -1,0 +1,41 @@
+//Header file for terminal driver
+#ifndef _TERMINAL_H
+#define _TERMINAL_H
+
+#include "lib.h"
+
+#define SCREEN_SIZE NUM_COLS * NUM_ROWS
+#define VMEM_START VIDEO
+#define VMEM_END VIDEO + SCREEN_SIZE
+
+
+int32_t terminal_read(int32_t fd, void * buf, int32_t nbytes);
+
+int32_t terminal_write(int32_t fd, void * buf, int32_t nbytes);
+
+int32_t terminal_open(void);
+
+int32_t terminal_close(void);
+
+void clear_screen(void);
+
+void print_line_header(void);
+
+void create_newline(int line_header);
+
+void general_scroll(void);
+
+void delete_character(void);
+
+
+
+
+
+/******Functions below are not implemented yet******/
+
+int32_t scroll_up(void);
+
+int32_t scroll_down(void);
+
+#endif /* TERMINAL_H */
+

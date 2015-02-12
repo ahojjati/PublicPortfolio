@@ -1,0 +1,176 @@
+//contains the handler for the keyboard
+//possibly an initialization function 
+// anything keyboard related
+
+#include "keyboard.h"
+#include "system_call.h"
+
+#define NUM_KEYBOARD_ENTRIES	0x3A
+
+
+volatile int term_read;
+
+static int shift_cntl;			// flag to determine if shift has been pressed
+static uint8_t keypress;
+static int cntl_flag = 0;       //flag to determine if control has been pressed
+static int caps_lock_flag = 0;  //flag to determine if caps lock has been pressed
+static int alt_flag = 0;
+
+char keys_caps_arr[NUM_KEYBOARD_ENTRIES] =
+{(char)0,(char)0,'!','@','#','$','%','^','&','*','(',')','_','+',0,(char)0,'Q',
+'W','E','R','T','Y','U','I','O','P','{','}','\n',(char)0,'A','S','D',
+'F','G','H','J','K','L',':','\"','~',(char)0,'|','Z','X','C','V',
+'B','N','M','<','>','?',(char)0,(char)0,(char)0,' '};
+
+char keys_lowr_arr[NUM_KEYBOARD_ENTRIES] =
+{(char)0,(char)0,'1','2','3','4','5','6','7','8','9','0','-','=',0,(char)0,
+'q','w','e','r','t','y','u','i','o','p','[',']','\n',(char)0,'a','s',
+'d','f','g','h','j','k','l',';','\'','`',(char)0,'\\','z','x','c',
+'v','b','n','m',',','.','/',(char)0,(char)0,(char)0,' '};
+
+
+/* 
+ * keyboard_init
+ * Description: Enables IRQ1 on the master PIC so interrupts can be sent
+ * and keyboard characters can be read
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: opens IRQ1 on master PIC
+ */
+
+void keyboard_init()
+{
+	caps_lock_flag = 0;
+	cntl_flag = 0;
+	keypress = 0;
+	term_read = 0;
+	shift_cntl = 0;
+	alt_flag = 0;
+	enable_irq(KEYBOARD_IRQ);
+}
+
+/*
+ * keyboard_idt
+ * Description:	scans port 0x60 to read the new scancode that may have come in
+ * Inputs: none
+ * Outputs: none
+ * Returns:	none
+ * Side Effects: sets appropriate flags and may call the keypress handler, which may
+ * then ouput a character on screen.
+ */
+ 
+void keyboard_handler_c()
+{
+	uint8_t input = inb(KEYBOARD_PORT);
+	switch(input) {
+		case LEFT_SHIFT:
+			shift_cntl = 1;
+			break;
+		case RIGHT_SHIFT:
+			shift_cntl = 1;
+			break;
+		case LEFT_SHIFT_R:
+			shift_cntl = 0;
+			break;
+		case RIGHT_SHIFT_R:
+			shift_cntl = 0;
+			break;
+		case CTRL:
+			cntl_flag = 1;
+			break;
+		case CTRL_R:
+			cntl_flag = 0;
+			break;
+		case ALT:
+			alt_flag = 1;
+			break;
+		case ALT_R:
+			alt_flag = 0;
+			break;
+		case L_PRESSED:
+			//Check for CNTL-L combination
+			if(cntl_flag)
+			{
+				clear_screen();
+				//clear_line_buffer();  //Do I want to clear the buffer when I clear the screen
+				term_read = 0;			// Do I want to send a read when I hit ctl L
+			}
+			else
+				key_press_read(input);
+			break;
+		case C_PRESSED:
+			if(cntl_flag)
+			{
+				send_eoi(KEYBOARD_IRQ);
+				_halt(255);
+			}
+			else
+				key_press_read(input);
+			break;
+		case CAPS_LOCK:
+			if(!caps_lock_flag)
+				caps_lock_flag = 1;
+			else
+				caps_lock_flag = 0;
+			break;
+		case ENTER:
+			key_press_read(input);
+			term_read = 0;
+			break;
+		case BACKSPACE:
+			screen_delete();
+			line_buffer_delete(current_terminal->terminal_number);
+			break;
+		case F1_PRESS:
+			if(alt_flag)
+				switch_terminals(0);
+			break;
+		case F2_PRESS:
+			if(alt_flag)
+				switch_terminals(1);
+			break;
+		case F3_PRESS:
+			if(alt_flag)
+				switch_terminals(2);
+			break;
+		default:					// ascii character should be displayed
+			key_press_read(input);
+			break;
+	}
+	send_eoi(KEYBOARD_IRQ);
+}
+
+/*
+ * key_press_read(uint8_t input)
+ * Description: receives a scancode from the handler that wasn't a control press and
+ * outputs the appropriate character on the terminal
+ * Inputs: input - scancode that was read from the port
+ * Outputs: displays character on screen
+ * Returns:	none
+ * Side Effects: none
+ * NOTE: keyboard scancodes found at:
+ * courses.engr.illinois.edu/ece390/books/labmanual/io-devices.html#IO-DEVICES-KEYBOARD
+ */
+void key_press_read(uint8_t input)
+{
+	int release_flag = 0;
+
+	if ((shift_cntl || caps_lock_flag) && input < NUM_KEYBOARD_ENTRIES)		// switch case for if shift was/is pressed
+	{
+		keypress = keys_caps_arr[input];
+	}
+	else if(input < NUM_KEYBOARD_ENTRIES)
+	{
+		keypress = keys_lowr_arr[input];
+	}
+	else
+		release_flag = 1;
+
+	//if appropriate, echo to screen and write to line buffer
+	if(!release_flag)
+	{
+		screen_add_char(keypress);
+		line_buffer_add(keypress, current_terminal->terminal_number);
+	}
+}

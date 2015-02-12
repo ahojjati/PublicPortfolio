@@ -1,0 +1,271 @@
+#include "file_sys.h"
+#include "lib.h"
+#include "x86_desc.h"
+
+
+//tasks to carry out:
+//FILE SYSTEM DRIVER:
+//  File & Directory open/close/read/write (1)
+//  Read text file (1)
+//  Read non-text file (1)
+//  Read Large Files (1)
+//  Read_Directory (1)
+
+//initialize the file system
+//really just points bootblock at the passed in address
+#define CURR_PROC_ADDR          0x08000000
+
+static pcb_t * curr_proc = (pcb_t *) CURR_PROC_ADDR;
+
+uint32_t
+file_system_init(void * addr)
+{
+    bootblock = addr;
+    return 0;
+}
+
+
+// fs_dir_read and fs_read are the only two functions that
+// do anything because our fs is read only
+
+//--------------directory orwc functions--------------
+
+/*
+ * DESCRIPTION : Open a directory in filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Absolutely nothing
+ *
+ */
+int32_t
+fs_dir_open()
+{
+    return 0;
+}
+ 
+/*
+ * DESCRIPTION : Read a directory in filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Similar to ls, allows user to read contents of directory
+ *
+ */
+int32_t
+fs_dir_read(int32_t fd, void * buffer, uint32_t count)
+{
+	char * buf = (char *) buffer;
+	f_desc_t * fdescriptor = & (curr_proc->fid)[fd];
+	uint32_t i = 0;
+	if(fdescriptor -> offs >= bootblock -> num_dir_entries)
+	{
+		for(i = 0; i < filename_bytes; i++)
+			buf[i] = 0;
+		return -1;
+	}
+	for(i = 0; i < filename_bytes; i++)
+		buf[i] = 0;
+	for(i = 0; i < filename_bytes && (bootblock->dir_entry)[fdescriptor->offs].file_name[i] != 0; i++)
+		buf[i] = (bootblock->dir_entry)[fdescriptor->offs].file_name[i];
+	return i;
+}
+
+/*
+ * DESCRIPTION : Write a directory to our filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Does absolutely nothing
+ *
+ */
+int32_t
+fs_dir_write(int32_t fd, const void * buffer, uint32_t count)
+{
+    return -1;
+}
+
+/*
+ * DESCRIPTION : Closes a directory in our file system
+ * INPUTS : buffer and count
+ * OUTPUTS : int
+ * RETURN VALUE : 0, always
+ * SIDE EFFECTS : Does nothing
+ *
+ */
+int32_t
+fs_dir_close()
+{
+    return 0;
+}
+
+
+
+//--------------file orwc functions--------------
+
+
+/*
+ * DESCRIPTION : Open a file
+ * INPUTS :buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : none, does nothing
+ *
+ */
+int32_t
+fs_open()
+{
+    return 0;
+}
+
+/*
+ * DESCRIPTION : Read a file
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : puts number of bytes in buffer to count
+ *
+ */
+int32_t
+fs_read(int32_t fd, void * buffer, uint32_t count)
+{
+	f_desc_t * fdescriptor = & (curr_proc->fid)[fd];
+	return read_data((uint32_t)(fdescriptor->inode), fdescriptor->offs, (uint8_t *)buffer, (int32_t)count);
+}
+
+/*
+ * DESCRIPTION : Writes a file
+ * INPUTS : buffer and count
+ * OUTPUTS : returns -1
+ * RETURN VALUE : -1 always
+ * SIDE EFFECTS : Does nothing because our fs is READ ONLY!!!
+ *
+ */
+int32_t
+fs_write(int32_t fd, const void * buffer, uint32_t count)
+{
+    return -1;
+}
+
+/*
+ * DESCRIPTION : Closes a file
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : this filesystem is read only, we don't need most of this
+ *
+ */
+int32_t
+fs_close()
+{
+    return 0;
+}
+
+
+//--------------------------------------------------------------------------------------------
+//--------------------------------additional stuff--------------------------------------------
+//--------------------------------------------------------------------------------------------
+
+
+int32_t
+read_dentry_by_name (const uint8_t* fname, dentry_t* dentry)
+{
+	uint32_t i;
+	uint8_t name[33];
+    for(i = 0; i < 31; i++)
+		name[i] = fname[i];
+	name[31] = '\0';
+	for(i = 0; i < bootblock->num_dir_entries; i++)
+	{
+		if(!strncmp((void*)name,(void*)((bootblock->dir_entry)[i]).file_name,filename_bytes))
+		{
+			memcpy(dentry, & ((bootblock->dir_entry)[i]), DENTRY_SIZE);
+			return 0;
+		}
+	}
+	//failure
+	return -1;
+}
+
+
+int32_t
+read_dentry_by_index (uint32_t index, dentry_t* dentry)
+{
+	if(index >= bootblock->num_dir_entries)
+		return -1;
+	//copy to memory
+	memcpy(dentry, & ((bootblock->dir_entry)[index]), DENTRY_SIZE);
+	return 0;
+}
+
+int32_t
+read_data(uint32_t inode, uint32_t offset, uint8_t* buf, uint32_t length)
+{
+
+	//determine how far into the file block to go
+	uint32_t into_block = offset % BLOCK_SIZE;
+	//determine which block we need to go into
+	uint32_t which_block = offset / BLOCK_SIZE;
+	//helps us determine whats going on
+	read_desc_t descriptor;
+	//index contained within inode 4B block
+	uint32_t indx;
+    //number of data blocks we've gone through
+    uint32_t num_processed = 0;
+	//pointer to the inode
+	index_node_t * inode_ptr = (index_node_t *)((uint32_t)bootblock + (uint32_t)BLOCK_SIZE*(inode + 1));
+	//start address of data
+	uint8_t * addr_data_start = (uint8_t*)(((bootblock->num_inodes + 1) * BLOCK_SIZE) + (uint32_t)bootblock);
+	//address of the data we are looking at
+	uint8_t * addr_data = addr_data_start;
+	//if the inode number is invalid return -1
+	if(inode >= (uint32_t) addr_data_start)
+		return -1;
+	if(offset >= inode_ptr -> length_bytes)
+		return 0;
+	descriptor.written = 0;
+	descriptor.count = length;
+	descriptor.buf = buf;
+	descriptor.error = 0;
+	indx = (inode_ptr->nth_data_block)[which_block];
+	addr_data += BLOCK_SIZE*indx + into_block;
+	//copy to memory
+	while(descriptor.count > 0)
+	{
+		if(indx < bootblock -> num_data_blocks && num_processed < (inode_ptr->length_bytes) - offset)
+		{
+			if(descriptor.count >= BLOCK_SIZE - into_block && descriptor.count < (inode_ptr->length_bytes) - offset - num_processed)
+			{
+				memcpy(descriptor.buf, addr_data, BLOCK_SIZE - into_block);
+				descriptor.buf += BLOCK_SIZE - into_block;
+				descriptor.count -= BLOCK_SIZE - into_block; //-?
+				descriptor.written += BLOCK_SIZE - into_block;//+?
+				into_block = 0;
+				which_block ++;
+				indx = (inode_ptr->nth_data_block)[which_block];
+				addr_data = addr_data_start + BLOCK_SIZE*indx;
+                num_processed += BLOCK_SIZE - into_block;
+			}
+			else if (descriptor.count < BLOCK_SIZE - into_block && descriptor.count < (inode_ptr->length_bytes) - offset - num_processed)
+			{
+				memcpy(descriptor.buf, addr_data, descriptor.count);
+				descriptor.written += descriptor.count;
+                num_processed += descriptor.count;
+				return descriptor.written;
+			}
+			else
+			{
+				memcpy(descriptor.buf, addr_data, (inode_ptr->length_bytes) - offset - num_processed);
+				descriptor.written += (inode_ptr->length_bytes) - offset - num_processed;
+				num_processed += (inode_ptr->length_bytes) - offset - num_processed;
+				return descriptor.written;
+			}
+		}
+		else
+		{
+			return descriptor.written;
+		}
+	}
+	return 0;
+}
+

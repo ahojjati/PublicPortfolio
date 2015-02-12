@@ -1,0 +1,136 @@
+/* i8259.c - Functions to interact with the 8259 interrupt controller
+ * vim:ts=4 noexpandtab
+ */
+
+#include "i8259.h"
+#include "lib.h"
+
+#define MASTER_INTERRUPTS 8
+#define MASK_ALL 0xFF
+
+/* Interrupt masks to determine which interrupts
+ * are enabled and disabled */
+uint8_t master_mask; /* IRQs 0-7 */
+uint8_t slave_mask; /* IRQs 8-15 */
+
+/* Interrupt Mask Register (IMR): 8 bits wide
+ * when a bit is set, the PIC ignores the request and continues
+ * normal operation; setting mask on higher request line doesn't 
+ * affect lower line.
+ */
+
+/* 
+ * i8259_init
+ * Description: Initialize the 8259 PIC 
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: initializes the PICS 
+ */
+void
+i8259_init(void)
+{ 
+	// Save current masks
+	/*unsigned char a1, a2;
+	a1 = inb(MASTER_DATA);
+	a2 = inb(SLAVE_DATA);*/
+	
+	// Disable all interrupts
+	master_mask = MASK_ALL;
+	slave_mask = MASK_ALL;
+	outb(master_mask, MASTER_DATA);
+	outb(slave_mask, SLAVE_DATA);
+
+	// Send out ICWs to master and slave
+	outb(ICW1, MASTER_8259_PORT);
+	outb(ICW1, SLAVE_8259_PORT);
+	
+	outb(ICW2_MASTER, MASTER_DATA);
+	outb(ICW2_SLAVE, SLAVE_DATA);
+	
+	outb(ICW3_MASTER, MASTER_DATA);
+	outb(ICW3_SLAVE, SLAVE_DATA);
+	
+	outb(ICW4, MASTER_DATA);
+	outb(ICW4, SLAVE_DATA);
+	
+
+	/*
+	// Restore masks
+	outb(a1, MASTER_DATA);
+	outb(a2, SLAVE_DATA);*/
+}
+
+/* 
+ * enable_irq
+ * Description: Enable (unmask) the specified IRQ 
+ * Inputs: irq_num - IRQ to enable on PIC(s)
+ * Outputs: none
+ * Returns: none
+ * Side Effects: opens up an IRQ at specified value (just one)
+ */
+void
+enable_irq(uint32_t irq_num)
+{
+	//printf("enabling IRQ number %d",irq_num);
+	if (irq_num < MASTER_INTERRUPTS)
+	{
+		master_mask = inb(MASTER_DATA) & ~(1 << irq_num);
+		outb(master_mask, MASTER_DATA);
+	}
+	else
+	{
+		irq_num -= 8;
+		slave_mask = inb(SLAVE_DATA) & ~(1 << irq_num);
+		outb(slave_mask, SLAVE_DATA);
+	}
+
+}
+
+/* 
+ * disable_irq
+ * Description: Disable (mask) the specified IRQ 
+ * Inputs: irq_num - IRQ to disable/mask
+ * Outputs: none
+ * Returns: none
+ * Side Effects: disables/writes into register to disable specified IRQ
+ */
+void
+disable_irq(uint32_t irq_num)
+{
+	if (irq_num < MASTER_INTERRUPTS)
+	{
+		master_mask = inb(MASTER_DATA) | (1 << irq_num);
+		outb(master_mask, MASTER_DATA);
+	}
+	else
+	{
+		irq_num -= 8;
+		slave_mask = inb(SLAVE_DATA) | (1 << irq_num);
+		outb(slave_mask, SLAVE_DATA);
+	}
+
+}
+
+/* 
+ * send_eoi
+ * Description: Send end-of-interrupt signal for the specified IRQ
+ * Inputs: irq_num - IRQ port to send the EOI to
+ * Outputs: writes to PIC(s) telling it that the interrupt has been handled
+ * Returns: none
+ * Side Effects: none
+ */
+void
+send_eoi(uint32_t irq_num)
+{
+		// if slave based interrupt was processed
+		if (irq_num >= MASTER_INTERRUPTS)
+		{														
+			outb(EOI | (irq_num - MASTER_INTERRUPTS), SLAVE_8259_PORT);
+			outb(EOI | SLAVE_IRQ, MASTER_8259_PORT);	
+		}
+		// if master based interrupt was processed
+		else{
+			outb(EOI | irq_num, MASTER_8259_PORT);
+		}													
+}

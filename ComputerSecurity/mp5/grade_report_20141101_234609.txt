@@ -1,0 +1,9 @@
+rtfreed2 total : 0/100
+Testing task1	0/40	
+	no submission	
+Testing task2	0/30	
+	no submission	
+Testing task3	0/30	
+	no submission	
+Testing task4 (bonus)	0/10	
+	no submission	

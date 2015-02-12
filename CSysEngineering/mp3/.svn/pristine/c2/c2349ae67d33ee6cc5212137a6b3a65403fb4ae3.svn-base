@@ -1,0 +1,67 @@
+#ifndef SCHED_H_
+#define SCHED_H_
+
+
+#include "lib.h"
+#include "types.h"
+#include "file_sys_struct.h"
+
+
+#define QUEUE_LOCATION		0x32000 //200 kb
+#define WORK_TIME			50
+#define NUM_P               8
+#define ACTIVE              0x40
+#define ON_TASK             0x80
+
+/*
+ explanation of queue:
+ We have 8 bits per entry, 8 entries in the queue
+ The values look like this:
+ _______________________________________________________
+ |           |           |                 |           |
+ | ON/OFF[7] | ACTIVE[6] |  RESERVED[5:3]  | PID [2:0] |
+ |           |           |                 |           |
+ _______________________________________________________
+
+ Reserved = 000
+ */
+
+typedef struct sched
+{
+	uint8_t queue[NUM_P];
+} __attribute__((packed)) sched_t;
+
+
+
+//schedules
+//every WORK_TIME ms we call sched and switch to the next
+//process in the queue
+//returns 0 on success, -1 on failure
+int8_t sched();
+
+
+//initializes the scheduler
+//returns 0 on success, -1 if the queue is messed up
+int8_t init_sched();
+
+//adds a process to the scheduler
+//returns 0 on success, -1 if the queue is full or messed up
+int8_t add_process(uint32_t);
+
+//note that "messed up" in this context means that it is pointing at
+//the wrong location
+
+//removes the process from the queue
+//returns -1 if the process was not in the queue
+//returns 0 on success
+int8_t delete_process(uint32_t);
+
+int8_t pause_process(uint32_t);
+
+int8_t resume_process(uint32_t);
+
+int8_t make_active(uint32_t);
+
+int8_t make_inactive(uint32_t);
+
+#endif

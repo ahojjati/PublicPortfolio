@@ -1,0 +1,62 @@
+#ifndef _SYSTEM_CALL_H
+#define _SYSTEM_CALL_H
+
+
+#include "types.h"
+#include "lib.h"
+#include "x86_desc.h"
+#include "rtc.h"
+#include "page.h"
+#include "terminal.h"
+#include "pcb_struct.h"
+#include "file_sys_struct.h"
+#include "file_sys.h"
+
+#define HALT 	1
+#define EXEC 	2
+#define OPEN 	3
+#define READ 	4
+#define WRIT 	5
+#define CLOS 	6
+#define _RTC	0
+#define _FIL	2
+#define _DIR	1
+
+#define FILE_HEADER_SIZE 	40
+#define PROCESS_START_ADDR 	24
+#define START_ADDR_OFFSET 	3
+#define BYTE 				8
+#define PROGRAM_IMAGE 		0x08048000
+#define MB_128				0x08000000
+#define OFFSET 				0x48000
+#define FOUR_MB				0x400000
+#define FOUR_KB				0x1000
+#define KSTACK_SIZE			0x2000
+#define KSTACK_START        0x800000
+#define SIZE_OF_BOOTBLOCK	4096
+#define NUM_FID				8
+#define BIG_NUMBER			5000000
+
+#ifndef ASM
+
+extern pcb_t running_process[8];
+extern int which_process;
+
+//System calls
+int32_t _halt (uint8_t status);
+int32_t _execute (const uint8_t* command);
+int32_t _read (int32_t fd,void* buf,int32_t nbytes);
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes);
+int32_t _open (const uint8_t* filename);
+int32_t _close (int32_t fd);
+int32_t _getargs (uint8_t* buf, uint32_t nbytes);
+int32_t _vidmap (uint8_t** screen_start);
+int32_t _set_handler (int32_t signum, void* handler_address); //Extra Credit
+int32_t _sigreturn (void);	//Extra Credit
+void init_system_calls();
+void spawn_shell();
+void execute_shell();
+
+#endif
+
+#endif /*_SYSTEM_CALL_H*/

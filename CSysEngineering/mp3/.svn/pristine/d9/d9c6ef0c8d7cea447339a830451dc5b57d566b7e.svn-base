@@ -1,0 +1,360 @@
+//File containing source code for terminal driver
+
+#include "terminal.h"
+#include "lib.h"
+#include "keyboard.h"
+
+static uint8_t line_buf[128];
+static int line_buf_index;
+int write_lock;               
+
+/* Function to handle system calls for reading from the terminal
+ * PARAMETERS: fd - ???
+ *			   buf - a pointer to a buffer in which to write the data
+ *			   nbytes - not used by this function
+ * RETURNS: the number of bytes successfully read into the buffer
+ * INFO: This function reads bytes from the line buffer up until the 
+ *		 newline character (\n).  If no newline character is present
+ *       than the entire buffer is read.  This function also clears 
+ *		 the line buffer.  It is intended to be called mainly 
+ *		 by the shell.
+ */
+int32_t terminal_read(int32_t fd, void * buf, int32_t nbytes)
+{
+	uint8_t * ptr = (uint8_t*)buf;
+	int index = -1;
+	do {
+		index++;
+		ptr[index] = line_buf[index];
+	}
+	while((line_buf[index] != '\n') && (index < BUFFER_SIZE-1));
+
+	//Clear the line buffer before returning
+	clear_line_buffer();
+	return index+1;
+}	
+
+/* Function to handle system calls for writing to the terminal
+ * PARAMETERS: fd - ???
+ 			   buf - a pointer to a buffer which contains the data to write
+ 			   nbytes - the number of bytes to write from the buffer
+ * RETURNS: the number of bytes successfully written, or -1 on failure 
+ * INFO: This function sets the write_lock to 1 at the beginning of
+ *       execution, and clears it before returning.  This will 
+ *       allow user programs to block keyboard echoes while trying 
+ *       to output information to the terminal.
+ */
+int32_t terminal_write(int32_t fd, const void * buf, int32_t nbytes)
+{	
+	write_lock = 1;
+
+	uint8_t* ptr = (uint8_t*)buf;
+	int8_t string[nbytes+1];
+	int32_t i;
+	//Check for valid pointer
+	if(ptr == NULL)
+		return -1;
+	for(i=0; i<nbytes; i++)
+	{
+		string[i] = (int8_t)ptr[i];
+	}  
+	string[i] = '\0';
+	create_newline(0);
+	printf(string);
+	create_newline(1);
+	
+	write_lock = 0;
+	return i;
+}
+
+/* Function to initialize the terminal
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 on failure
+ * INFO:
+ */
+int32_t terminal_open(void)
+{
+	clear_line_buffer();
+	clear_screen(1);
+	write_lock = 0;
+	return 0;
+}
+
+/* Function to close the terminal
+ * PARAMETERS: none
+ * RETURNS: -1 always, since the terminal should never be closed
+ * INFO: This function does nothing, since it should not be possible
+ *       for a system call to close the terminal
+ */
+int32_t terminal_close(void)
+{
+	//Terminal cannot be closed, so return -1
+	return -1;  
+}
+
+/* Function to clear the screen and put the cursor at the top
+ * PARAMETERS: line_header - if 1, print a line header, if 0, clear
+ *                           the screen entirely
+ * RETURNS: void
+ * INFO: This function clears video memory associated with the terminal.
+ * NOTE: If scroll_up and scroll_down are implemented, this function 
+ *       will move the data in video memory to a stack before clearing
+ *       it out.
+ */
+void clear_screen(int line_header)
+{
+	/***If arrow key scrolling is implemented, save info HERE***/
+
+	//Clear out video memory and put the cursor at the top
+	clear();
+	screen_x = 0;
+	screen_y = 0;
+	if(line_header)
+		print_line_header();
+	return;
+}
+
+/* Function to print the "[user@ourOS]$" header at the beginning of
+ * each line.
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function might need further modification in order
+ *       to display the current directory on each newline. It 
+ *       will print the header at whatever location screen_x and 
+ *       screen_y are currently set to.
+ */
+void print_line_header(void)
+{
+	printf("[user@ourOS]$ ");
+	return;
+}	
+
+/* Function to put a line header on the next line and move the cursor
+ * PARAMETERS: line_header - if 0, a line header will not be printed. 
+ *                           Otherwise, a line header is printed.
+ * RETURNS: void
+ * INFO: This function will automatically check if scrolling is needed
+ */
+void create_newline(int line_header)
+{
+	//Check if scrolling is needed
+	if(screen_y >= 24)
+	{
+		general_scroll();
+		//Make sure screen_y is 24 in case it was above valid range
+		screen_y = 24;      
+	}
+	else
+		screen_y++;
+	screen_x = 0;
+	if(line_header)
+		print_line_header();
+	return;
+}
+
+/* Function to scroll the screen up if text reaches the bottom
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function creates a blank line in the bottomost row in the 
+ *       terminal, and shifts all other data upwards in video memory. 
+ *       It does NOT print a line header...leave it to the caller.
+ * NOTE: If arrow key scrolling is implemented, this function will 
+ *       have to be modified to save the topmost row of video memory
+ *       to a buffer/stack.
+ */
+void general_scroll(void)
+{
+	int i, j;
+	//Shift data upwards in video memory
+	uint8_t * upper_row = (uint8_t*)VMEM_START;
+	uint8_t * lower_row = (uint8_t*)(VMEM_START + NUM_COLS*2);
+	for(i=0; i<(NUM_ROWS-1); i++)
+	{
+		for(j=0; j<(NUM_COLS*2); j++)
+		{
+			*(upper_row + j) = *(lower_row + j);
+		}
+		upper_row += NUM_COLS*2;
+		lower_row += NUM_COLS*2;
+	}
+
+	//Clear out the bottom row
+	for(i=0; i<(NUM_COLS*2); i++)
+	{
+		if(i%2)
+			*(upper_row + i) = ATTRIB;
+		else
+			*(upper_row + i) = ' ';
+	}
+	return;
+}
+
+/* Function which erases a single character from the screen
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function will be used mainly when backspace is pressed
+ */
+void delete_character(void)
+{
+	//Check to make sure that the cursor is not at the top left
+	if(!(screen_x == 0 && screen_y == 0))
+	{
+		uint8_t * ptr = (uint8_t*)(VMEM_START + 2*(screen_y*NUM_COLS + screen_x - 1));
+		*ptr = ' ';
+		screen_x--;
+		if(screen_x < 0)
+		{
+			screen_y--;
+			screen_x = NUM_COLS-1;
+		}
+	}
+	return;
+}
+
+/* Helper function which clears out the line buffer
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function fills the line buffer with all spaces
+ */
+void clear_line_buffer(void)
+{
+	int i;
+	for(i=0; i<BUFFER_SIZE; i++)
+		line_buf[i] = ' ';
+	line_buf_index = 0;
+	return;
+}
+
+/* Helper function which writes a single charcter to the line buffer
+ * PARAMETERS: c - the character to write
+ * RETURNS: 0 on success, -1 on failure (ie. line buf is full)
+ * INFO: This function will not write to the line buffer if it is
+ *       already full.
+ */
+int line_buffer_add(uint8_t c)
+{
+	int retval;
+	if(line_buf_index < BUFFER_SIZE-1)
+	{
+		line_buf[line_buf_index] = c;
+		line_buf_index++;
+		retval = 0;
+	}
+	else
+	{
+		retval = -1;
+	}
+	return retval;
+}
+
+/* Helper function which removes a single character from the line buffer
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 if the buffer is empty (nothing to delete)
+ * INFO: This function is called when backspace is pressed.  If there
+ */
+int line_buffer_delete(void)
+{
+	int retval;
+	if(line_buf_index == 0)
+		retval = -1;
+	else
+	{
+		line_buf_index--;
+		line_buf[line_buf_index] = ' ';
+		retval = 0;
+	}
+	return retval;
+}
+
+/* Function to test whether terminal_read() is working.
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function is not actually used by the OS, but is for
+ *       development purposes only.  It is called by the keyboard driver
+ *       when F1 is pressed.
+ */
+void terminal_read_test(void)
+{
+	uint8_t data[BUFFER_SIZE];
+	int32_t size = terminal_read(0, &data, 0);
+	int8_t string[size+1];
+	int i;
+	for(i=0; i<size; i++)
+	{
+		string[i] = (int8_t)data[i];
+	}
+	string[i] = '\0';
+	cli();
+	create_newline(0);
+	printf("The command entered was: ");
+	printf(string);
+	create_newline(1);
+	sti();
+	return;
+}
+
+/* Function to test whether terminal_write() is working.
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function is not actually used by the OS, but is for
+ *       development purposes only.  It is called by the keyboard driver
+ *       when F2 is pressed.
+ */
+void terminal_write_test(void)
+{
+	uint8_t theString[] = "This is a test of terminal_write(). If you are seeing this text, it means that the function is working!";
+	int32_t nbytes = sizeof(theString);
+	int32_t retval = terminal_write(0, theString, nbytes);
+	create_newline(0);
+	printf("The return value from terminal_write is: %d", retval);
+	create_newline(1);
+	return;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/********************************************************************
+ ********FUNCTIONS BELOW THIS LINE ARE NOT IMPLEMENTED YET***********
+ ********************************************************************/
+
+/* Function to scroll the screen up by one line when the up arrow
+ * pressed.
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 on failure
+ * INFO: This function will access saved off-screen data and put 
+ *       it back onto the screen.
+ */
+int32_t scroll_up(void)
+{
+	//Implement this additional feature if you have time
+	return 0;
+}
+
+/* Function to scroll the screen down by one line when the down arrow
+ * is pressed.
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 on failure
+ * INFO: This function will access saved off-screen data and put 
+ *       it back onto the screen.
+ */
+int32_t scroll_down(void)
+{
+	//Implement this additional feature if you have time
+	return 0;
+}
+

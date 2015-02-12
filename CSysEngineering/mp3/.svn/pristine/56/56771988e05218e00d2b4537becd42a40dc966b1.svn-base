@@ -1,0 +1,423 @@
+.data
+	USER_DS = 0x002B
+	
+.text
+
+
+	.globl divide_error,debug,nmi,int3,overflow,bounds,invalid_op,device_not_available
+	.globl doublefault_fn,coprocessor_segment_overrun,invalid_TSS,segment_not_present
+	.globl stack_segment,general_protection,page_fault,floating_point,alignment_check
+	.globl machine_check,simd_coprocessor_error
+	.globl master_irq0,keyboard_handler,master_irq2,master_irq3,master_irq4,master_irq5,master_irq6,master_irq7
+	.globl rtc_handler,slave_irq0,slave_irq1,slave_irq2,slave_irq3,slave_irq4,slave_irq5,slave_irq6,slave_irq7
+	.globl system_call
+
+#Intels interrupt wrappers so IRET works correctly
+divide_error:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call divide_error_c
+	jmp restore_return
+
+debug:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call debug_c
+	jmp restore_return
+
+nmi:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call nmi_c
+	jmp restore_return
+
+int3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call int3_c
+	jmp restore_return
+
+overflow:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call overflow_c
+	jmp restore_return
+
+bounds:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call bounds_c
+	jmp restore_return
+
+invalid_op:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call invalid_op_c
+	jmp restore_return
+
+device_not_available:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call device_not_available_c
+	jmp restore_return
+
+doublefault_fn:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call doublefault_fn_c
+	jmp restore_return
+
+coprocessor_segment_overrun:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call coprocessor_segment_overrun_c
+	jmp restore_return
+
+invalid_TSS:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call invalid_TSS_c
+	jmp restore_return
+
+segment_not_present:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call segment_not_present_c
+	jmp restore_return
+
+stack_segment:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call stack_segment_c
+	jmp restore_return
+
+general_protection:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call general_protection_c
+	jmp restore_return
+
+page_fault:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call page_fault_c
+	jmp restore_return
+
+floating_point:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call floating_point_c
+	jmp restore_return
+
+alignment_check:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call alignment_check_c
+	jmp restore_return
+
+machine_check:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call machine_check_c
+	jmp restore_return
+
+simd_coprocessor_error:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call simd_coprocessor_error_c
+	jmp restore_return
+
+	#Pic master irq line interrupts wrapper so IRET works correctly
+master_irq0:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq0_c
+	jmp restore_return
+
+keyboard_handler: 	 #master_irq1()
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call keyboard_handler_c
+	jmp restore_return
+
+master_irq2:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq2_c
+	jmp restore_return
+
+master_irq3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq3_c
+	jmp restore_return
+
+master_irq4:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq4_c
+	jmp restore_return
+
+master_irq5:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq5_c
+	jmp restore_return
+
+master_irq6:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq6_c
+	jmp restore_return
+
+master_irq7:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq7_c
+	jmp restore_return
+
+	#Pic slave irq line interrupts
+rtc_handler:		 #slave_irq0()
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call rtc_handler_c
+	jmp restore_return
+
+slave_irq1:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq1_c
+	jmp restore_return
+
+slave_irq2:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq2_c
+	jmp restore_return
+
+slave_irq3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq3_c
+	jmp restore_return
+
+slave_irq4:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq4_c
+	jmp restore_return
+
+slave_irq5:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq5_c
+	jmp restore_return
+
+slave_irq6:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq6_c
+	jmp restore_return
+
+slave_irq7:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq7_c
+	jmp restore_return
+
+restore_return:
+	popf
+	popl %edx
+	popl %ecx
+	popl %eax
+	iret
+
+system_call:
+	pushl %eax	#argument
+
+	pushw %es
+	pushw %ds
+	pushl %eax
+	pushl %ebp	#ULK Page 163, PUSH ALL
+	pushl %edi
+	pushl %esi
+	pushl %edx
+	pushl %ecx
+	pushl %ebx
+	movl $USER_DS,%edx
+	movl %edx,%ds
+	movl %edx,%es
+
+	#value checking
+	cmpl $0,%eax			
+	je error
+	cmpl $11,%eax
+	jae error
+
+	subl $1,%eax
+	jmp *system_call_jumptable(,%eax,4)
+
+error:
+	movl $-1,24(%esp)  #puts -1 into eax saved on stack
+
+restore_ret_syscall:
+	popl %ebx
+	popl %ecx
+	popl %edx
+	popl %esi	#POP ALL
+	popl %edi
+	popl %ebp
+	popl %eax
+	popw %ds
+	popw %es
+	addl $4, %esp
+	iret
+
+system_call_jumptable:
+.long halt,execute,read,write,open,close,getargs,vidmap,set_handler,sigreturn
+
+halt:
+pushl %ebx						#pushes arguments
+call  _halt						#call c function system call
+addl $4,%esp					#remove argument from stack
+movl %eax,24(%esp)				#store return value back to %eax on stack
+jmp restore_ret_syscall			#return from the call
+
+execute:
+pushl %ebx
+call _execute
+addl $4,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+read:
+pushl %ebx
+pushl %ecx
+pushl %edx
+call _read
+addl $12,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+write:
+pushl %ebx
+pushl %ecx
+pushl %edx
+call _write
+addl $12,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+open:
+pushl %ebx
+call _open
+addl $4,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+close:
+pushl %ebx
+call _close
+addl $4,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+getargs:
+pushl %ebx
+pushl %ecx
+call _execute
+addl $8,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+vidmap:
+pushl %ebx
+call _vidmap
+addl $4,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+set_handler:
+pushl %ebx
+pushl %ecx
+call _set_handler
+addl $8,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall
+
+sigreturn:
+pushl %ebx
+call _sigreturn
+addl $4,%esp
+movl %eax,24(%esp)
+jmp restore_ret_syscall

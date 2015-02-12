@@ -1,0 +1,36 @@
+#include "x86_desc.h"
+#include "lib.h"
+#include "page.h"
+
+void
+init_page_dir()
+{
+    int i;
+    for (i = 0; i < NUM_KILO*NUM_PAGES; i++) {
+        page_dir[i] = 0;
+    }
+}
+
+
+void
+init_page_tab()
+{
+    
+}
+
+
+void
+init_pages()
+{
+    uint32_t temp;
+    //set up page directory
+    init_page_dir();
+    //set up page table
+    init_page_tab();
+    //enable paging
+    asm volatile ("movl %%cr0, %0\n":"=r"(temp));
+    temp = temp | ENABLE_MASK;
+    asm volatile ("movl %0, %%cr0" : : "r"(temp));
+    //cr3 set to page_dir
+    asm volatile ("movl %0, %%cr3" : : "r"(page_dir));
+}

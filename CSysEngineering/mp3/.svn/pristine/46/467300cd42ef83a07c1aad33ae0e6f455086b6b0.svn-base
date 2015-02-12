@@ -1,0 +1,448 @@
+//system_call.c where all the system calls are handled
+
+#include "types.h"
+#include "system_call.h"
+#include "lib.h"
+#include "x86_desc.h"
+#include "file_sys.h"
+#include "page.h"
+
+#define CURR_PROC_ADDR          0x08000000
+
+
+static int32_t old_ebp;
+static int32_t old_esp;
+
+static f_ops_t terminal_ops;
+static f_ops_t rtc_ops;
+static f_ops_t fs_ops;
+static f_ops_t fd_ops;
+
+static reg_t shell_registers; 
+static pcb_t * current_process = NULL;
+/* 
+ * _halt
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _halt (uint8_t status)
+{
+	/* Terminates process returning status to parent
+	 * The system call handler
+	 * itself is responsible for expanding the 8-bit argument
+	 * from BL into the 32-bit return value to the parent program’s
+	 * execute system call. Be careful not to return all 32 bits
+	 * from EBX. This call should never return to the caller
+	 */
+
+	 //clear current process of all values
+	 //set current process to parent process after restoring values
+
+	 current_process->occupado = 0;
+	 setup_page_process(current_process->parent);
+	 if (current_process->parent != -1)
+	 {
+	 	current_process->return_value = status;
+	 }
+	 asm volatile ("jmp *%0" : : "a" ((void*)(current_process->return_address)));
+	 return 0;
+/*	if (current_process->parent == -1)
+	{
+		//restore the shell registers
+		setup_page_process(-1);
+		asm volatile ("movl %0, %%ebx" :"=a"((shell_registers).ebx));
+		asm volatile ("movl %0, %%ecx" :"=a"((shell_registers).ecx));
+		asm volatile ("movl %0, %%edx" :"=a"((shell_registers).edx));
+		asm volatile ("movl %0, %%edi" :"=a"((shell_registers).edi));
+		asm volatile ("movl %0, %%esi" :"=a"((shell_registers).esi));
+		asm volatile ("movl %0, %%ebp" :"=a"((shell_registers).ebp));
+		asm volatile ("movl %0, %%esp" :"=a"((shell_registers).esp));
+		asm volatile ("movl %0, %%eip" :"=a"((shell_registers).eip));
+		asm volatile ("movl %0, %%eax" :"=a"((shell_registers).eax));
+
+
+	}
+	else //if the process has a parent
+	{
+		setup_page_process(current_process->parent);
+		asm volatile ("movl %0, %%ebx" :"=a"((current_process->registers).ebx));
+		asm volatile ("movl %0, %%ecx" :"=a"((current_process->registers).ecx));
+		asm volatile ("movl %0, %%edx" :"=a"((current_process->registers).edx));
+		asm volatile ("movl %0, %%edi" :"=a"((current_process->registers).edi));
+		asm volatile ("movl %0, %%esi" :"=a"((current_process->registers).esi));
+		asm volatile ("movl %0, %%ebp" :"=a"((current_process->registers).ebp));
+		asm volatile ("movl %0, %%esp" :"=a"((current_process->registers).esp));
+		asm volatile ("movl %0, %%eip" :"=a"((current_process->registers).eip));
+		asm volatile ("movl %0, %%eax" :"=a"((current_process->registers).eax));
+	}*/
+	return 0;
+}
+
+void init_file_ops()
+{
+	//initialize the file_ops
+	rtc_ops.open  = rtc_open;
+	rtc_ops.close = rtc_close;
+	rtc_ops.read  = rtc_read;
+	rtc_ops.write = rtc_write;
+	terminal_ops.open  = terminal_open;
+	terminal_ops.close = terminal_close;
+	terminal_ops.read  = terminal_read;
+	terminal_ops.write = terminal_write;
+	fs_ops.open  = fs_open;
+	fs_ops.close = fs_close;
+	fs_ops.read  = fs_read;
+	fs_ops.write = fs_write;
+	fd_ops.open  = fs_dir_open;
+	fd_ops.close = fs_dir_close;
+	fd_ops.read  = fs_dir_read;
+	fd_ops.write = fs_dir_write;
+}
+
+//prnt = parent pid
+//-1 if there is no parent
+uint32_t init_pcb(int32_t prnt)
+{
+	uint8_t pcb_num;
+	uint32_t i;
+
+	//find an empty pcb
+	for( i = 0 ; i < NUM_PROCESSES ; i ++ )
+	{
+		setup_page_process(i);
+		current_process = (pcb_t * ) CURR_PROC_ADDR;
+		if (!(current_process->occupado))
+		{
+				pcb_num = i;
+				current_process->occupado = 1;
+				break;
+		}
+		if (i == NUM_PROCESSES - 1)
+		{
+			setup_page_process(prnt);
+			return -1;
+		}
+	}
+
+	//set up the argument
+	for( i = 0; i < BUFF_SIZE; i++)
+	{
+		(current_process->argument)[i] = ' ';
+	}
+	//set up the remainder of the parameters
+/*	(current_process->fid)[0]).offs = 0;
+	(current_process->fid)[0]).flags = 1;
+	(current_process->fid)[0]).fops = & terminal_ops;
+	(current_process->fid)[0]).inode = NULL;
+	(current_process->fid)[1]).offs = 0;
+	(current_process->fid)[1]).flags = 1;
+	(current_process->fid)[1]).fops = & terminal_ops;
+	(current_process->fid)[1]).inode = NULL;
+	current_process->parent = prnt;*/
+
+	//go back to the parent pcb if there is one
+	if (prnt > 0 && prnt <= NUM_PROCESSES)
+	{
+		setup_page_process(prnt);
+		//set the child pcb of the parent
+		current_process->child = pcb_num;
+		//set back to the correct pcb
+		setup_page_process(pcb_num);
+	}
+	else
+	{
+		current_process->parent = -1;
+	}
+	return pcb_num;
+}
+
+/* 
+ * _execute
+ * Description: attemps to load and execute a new program, handing off processor to new program until it terminates
+ * Inputs: command - string of words separated by spaces
+ * 						- first word is name of executable
+ *						- rest of words w/o spaces are arguments to be passed in on call from _getargs
+ * Outputs: none
+ * Returns: -1 - command can't be executed
+ *			256 - exception occurs
+ *			0-255 - program executes a _halt system call and returns whatever is passed into _halt
+ * Side Effects: hands off processor to new process
+ */
+int32_t _execute (const uint8_t* command)
+{
+	if(current_process != NULL)
+	{
+		asm volatile ("movl %%ebx, %0" :"=a"((current_process->registers).ebx));
+		asm volatile ("movl %%ecx, %0" :"=a"((current_process->registers).ecx));
+		asm volatile ("movl %%edx, %0" :"=a"((current_process->registers).edx));
+		asm volatile ("movl %%edi, %0" :"=a"((current_process->registers).edi));
+		asm volatile ("movl %%esi, %0" :"=a"((current_process->registers).esi));
+		asm volatile ("movl %%ebp, %0" :"=a"((current_process->registers).ebp));
+		asm volatile ("movl %%esp, %0" :"=a"((current_process->registers).esp));
+		asm volatile ("movl %%eax, %0" :"=a"((current_process->registers).eax));
+	}
+	else
+	{
+		asm volatile ("movl %%ebx, %0" :"=a"((shell_registers).ebx));
+		asm volatile ("movl %%ecx, %0" :"=a"((shell_registers).ecx));
+		asm volatile ("movl %%edx, %0" :"=a"((shell_registers).edx));
+		asm volatile ("movl %%edi, %0" :"=a"((shell_registers).edi));
+		asm volatile ("movl %%esi, %0" :"=a"((shell_registers).esi));
+		asm volatile ("movl %%ebp, %0" :"=a"((shell_registers).ebp));
+		asm volatile ("movl %%esp, %0" :"=a"((shell_registers).esp));
+		asm volatile ("movl %%eax, %0" :"=a"((shell_registers).eax));
+	}
+	uint8_t xfile_name[BUFF_SIZE], file_header[FILE_HEADER_SIZE];
+	uint32_t i = 0, j = 0, k = 0, e_entry = 0, flag = 0, iterator, check;
+	dentry_t new_dentry;
+	//pcb_t new_process;
+    /* not enough space in the pcb array */
+    if (current_process == NULL)
+    {
+    	check = init_pcb(-1);	
+    }
+    else
+    {
+   		check = init_pcb((current_process)->PID);
+	}
+    if (check == -1)
+    {
+    	return -1;
+    }
+    else
+    {
+    	current_process->PID = check;
+    }
+
+/* parse through command to get file name and arguments in appropriate forms */
+
+	/* get the name of the possible executable file */
+	while(command[i] != '\n')
+	{
+		if (flag == 0 && command[i] == ' ')
+		{
+			i++;
+		}
+		else if (flag == 1 && command[i] == ' ')
+		{
+			break;
+		}	
+		else
+		{
+			flag = 1;
+			xfile_name[k] = command[i];
+			i++;
+			k++;
+		}
+	}
+	xfile_name[i] = '\0';
+	/* put arguments into appropriate form in case call from _getargs occurs */
+	while(command[i] != '\n')
+	{
+		if (command[i] != ' ')
+		{
+			(current_process->argument)[j] = command[i];
+			j++;
+			i++;
+		}
+		else
+		{
+			i++;
+		}
+	}
+	(current_process->argument)[j] = '\0';
+/* check to see whether an executable file */
+
+	if (read_dentry_by_name(xfile_name, &new_dentry) == -1)
+		return -1;
+
+	/* check to see if the copied dentry values contains a valid inode_num */
+
+    if (read_data(new_dentry.inode_num, 0, file_header, FILE_HEADER_SIZE) < FILE_HEADER_SIZE)
+    	return -1;
+
+    /* check to see if the file is an executable; first 4 bytes should read 0x7F, E, L, F */
+    if (!(file_header[0] == 0x7F && file_header[1] == 'E' && file_header[2] == 'L' && file_header[3] == 'F'))
+    	return -1;
+
+/* start the new process */
+
+    /* grab the memory address from file header of the entry point of where the process starts executing */
+    for (iterator = START_ADDR_OFFSET; iterator >= 0; iterator--)
+    {
+    	e_entry += file_header[iterator + PROCESS_START_ADDR];
+    	if (iterator == 0)
+    		break;
+    	e_entry = e_entry << BYTE;
+    }
+
+/* In line assembly to save old register values so we can restore stack frame eventually */
+
+    /* save ebp register */
+    asm volatile ("movl %%EBP, %0" : "=a"(old_ebp) : :"memory", "cc");
+    /* save esp register */
+    asm volatile ("movl %%ESP, %0" : "=a"(old_esp) : :"memory", "cc");
+    /* save eip register */
+    //asm volatile ("movl %%EIP, %0" : "=a"(old_eip) : : "memory", "cc");
+
+	return -1;
+}
+/* 
+ * _read
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _read (int32_t fd,void* buf,int32_t nbytes)
+{
+	if (fd < 0 || fd > 7 || !((current_process->fid)[fd]).flags)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->read(fd, buf, nbytes);
+}
+/* 
+ * _write
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes)
+{
+	if (fd < 0 || fd > 7 ||!((current_process->fid)[fd]).flags)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->write(fd, buf, nbytes);
+}
+/* 
+ * _open
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _open (const uint8_t* filename)
+{
+	dentry_t dt;
+	uint32_t temp;
+	f_desc_t desc;
+	int i;
+	int8_t pcb_num = -1;
+	temp = read_dentry_by_name(filename, &dt);
+	for (i = 0; i < 7; ++i)
+	{
+		if (!((current_process->fid)[i]).flags)					//<--------------------Flags of 1 will evaluate true but flags of 0 means its open
+		{
+			pcb_num = i;
+			break;
+		}
+	}
+	if (temp == -1 || pcb_num == -1 || pcb_num == 0 || pcb_num == 1)
+	{
+		printf("Something went horribly horribly awry...");
+		return -1;
+	}
+	//this is very ugly but we use it to find the address of the corresponding inode, hope it works
+	desc.flags = 1;
+	desc.offs = 0;
+	switch(dt.file_type)
+	{
+		case _RTC:
+		{
+			desc.inode = NULL;
+			desc.fops = & rtc_ops;
+		}
+		case _FIL:
+		{
+			desc.inode = NULL;
+			desc.fops = & fs_ops;
+		}
+		case _DIR:
+		{
+			desc.inode = (index_node_t * )((uint32_t)bootblock + (uint32_t)sizeof(bootblock) + ((dt.inode_num)*sizeof(index_node_t)));
+			desc.fops = & fd_ops;
+		}
+		default:
+		{
+			return -1;
+		}
+	}
+	(current_process->fid)[(uint32_t)pcb_num] = desc;
+	return pcb_num;
+}
+/* 
+ * _close
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _close (int32_t fd)
+{
+
+	if(fd <= 1 || fd > 7)
+		return -1;
+	((current_process->fid)[fd]).fops = NULL;
+	((current_process->fid)[fd]).inode = NULL;
+	((current_process->fid)[fd]).offs = 0;
+	((current_process->fid)[fd]).flags = 0;
+	return 0;
+}
+/* 
+ * _getargs
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _getargs (uint8_t* buf, uint32_t nbytes)
+{
+	return 0;
+}
+/* 
+ * _vidmap
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _vidmap (uint8_t** screen_start)
+{
+	return 0;
+}
+/* 
+ * _set_handler
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _set_handler (int32_t signum, void* handler_address)
+{
+	return 0;
+}
+/* 
+ * _sigreturn
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _sigreturn (void)	
+{
+	return 0;
+}

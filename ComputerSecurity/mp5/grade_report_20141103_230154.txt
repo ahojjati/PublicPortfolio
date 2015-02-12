@@ -1,0 +1,13 @@
+rtfreed2 total : 40/100
+Testing task1	40/40	
+	1 : passed
+	2 address : passed
+	2 content : passed
+	3 address : passed
+	3 content : passed	
+Testing task2	0/30	
+	failed	
+Testing task3	0/30	
+	no submission	
+Testing task4 (bonus)	0/10	
+	no submission	

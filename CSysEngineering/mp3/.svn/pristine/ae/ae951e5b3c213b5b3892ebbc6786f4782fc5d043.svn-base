@@ -1,0 +1,29 @@
+boot.o: boot.S multiboot.h types.h x86_desc.h file_sys.h lib.h \
+  file_sys_struct.h pcb_struct.h
+int_handlers.o: int_handlers.S
+x86_desc.o: x86_desc.S x86_desc.h types.h file_sys.h lib.h \
+  file_sys_struct.h pcb_struct.h
+file_sys.o: file_sys.c file_sys.h types.h lib.h file_sys_struct.h \
+  pcb_struct.h
+i8259.o: i8259.c i8259.h types.h lib.h
+init_idt.o: init_idt.c init_idt.h lib.h types.h int_handlers.h x86_desc.h \
+  file_sys.h file_sys_struct.h pcb_struct.h system_call.h rtc.h page.h \
+  terminal.h keyboard.h i8259.h
+int_handlers_c.o: int_handlers_c.c int_handlers_c.h lib.h types.h i8259.h
+kernel.o: kernel.c multiboot.h types.h x86_desc.h file_sys.h lib.h \
+  file_sys_struct.h pcb_struct.h i8259.h debug.h init_idt.h \
+  int_handlers.h system_call.h rtc.h page.h terminal.h keyboard.h
+keyboard.o: keyboard.c keyboard.h lib.h types.h terminal.h pcb_struct.h \
+  file_sys_struct.h page.h x86_desc.h file_sys.h i8259.h system_call.h \
+  rtc.h
+lib.o: lib.c lib.h types.h
+page.o: page.c page.h types.h lib.h x86_desc.h file_sys.h \
+  file_sys_struct.h pcb_struct.h
+pcb_struct.o: pcb_struct.c pcb_struct.h lib.h types.h file_sys_struct.h
+rtc.o: rtc.c i8259.h types.h lib.h rtc.h
+sched.o: sched.c sched.h lib.h types.h file_sys_struct.h
+system_call.o: system_call.c system_call.h types.h lib.h x86_desc.h \
+  file_sys.h file_sys_struct.h pcb_struct.h rtc.h page.h terminal.h \
+  keyboard.h i8259.h sched.h
+terminal.o: terminal.c terminal.h lib.h types.h keyboard.h i8259.h \
+  pcb_struct.h file_sys_struct.h page.h x86_desc.h file_sys.h

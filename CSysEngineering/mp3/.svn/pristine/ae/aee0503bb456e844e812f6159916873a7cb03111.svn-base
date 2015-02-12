@@ -1,0 +1,22 @@
+#ifndef _file_sys_h
+#define _file_sys_h
+
+
+
+
+//only read does anything
+void fs_dir_open(char[], int);
+void fs_dir_read(char[], int);
+void fs_dir_write(char[], int);
+int fs_dir_close(char[], int);
+
+
+//only read does anything
+void fs_open(char[], int);
+void fs_read(char[], int);
+int fs_write(char[], int);
+void fs_close(char[], int);
+
+
+
+#endif

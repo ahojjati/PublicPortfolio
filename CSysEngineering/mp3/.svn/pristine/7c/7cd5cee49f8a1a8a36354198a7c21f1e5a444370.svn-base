@@ -1,0 +1,4 @@
+#include "pcb_struct.h"
+
+pcb_t * current_process = NULL;
+uint32_t e_entry_shell;

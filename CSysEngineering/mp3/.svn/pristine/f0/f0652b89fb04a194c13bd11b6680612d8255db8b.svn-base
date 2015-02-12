@@ -1,0 +1,148 @@
+#include "sched.h"
+#include "lib.h"
+#include "types.h"
+
+
+sched_t * scheduler = (sched_t *) QUEUE_LOCATION;
+
+
+
+int8_t
+sched()
+{
+    if (scheduler == NULL) {
+        //fix the scheduler if it is broken...
+        init_shed();
+        return -1;
+    }
+    else if ((scheduler -> queue) == 0) {
+        return -1;
+    }
+    //shift the queue until we come upon process that is both on and active
+    do
+    {
+        shift_queue(scheduler);
+    }while (!(((scheduler->queue[0] & ACTIVE) >> 6) && ((scheduler->queue[0] & ON_TASK) >> 7)));
+
+    if (current_process->PID != ((scheduler->queue)[0] & 0x7))
+    {
+        pause_process(current_process->PID);
+        resume_process((scheduler->queue)[0] & 0x7);
+    }
+    return 0;
+}
+
+
+int8_t
+init_sched()
+{
+    int i;
+    scheduler = (sched_t *) QUEUE_LOCATION;
+    if (scheduler == NULL)
+        return -1;
+    for (i = 0; i < NUM_P; i++) {
+        scheduler->queue = 0;
+    }
+    return 0;
+}
+
+
+int8_t
+add_process(uint32_t PID)
+{
+    int i;
+    if (scheduler == NULL)
+        return -1;
+    for (i = 0; i < NUM_P; i++) {
+        if (!(((scheduler->queue)[i] & 0x80) >> 7)) {
+            scheduler->queue[i] = ACTIVE | ON_TASK | (PID & 0x7);
+            return 0;
+        }
+    }
+    return -1;
+
+}
+
+
+int8_t
+delete_process(uint32_t PID)
+{
+    int i;
+    if (scheduler == NULL)
+        return -1;
+    for (i = 0; i < NUM_P; i++) {
+        if (((scheduler->queue)[i] & 0x7) == PID) {
+            (scheduler->queue)[i] = 0;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int8_t
+make_active(uint32_t PID)
+{
+    int i;
+    if (scheduler == NULL)
+        return -1;
+    for (i = 0; i < NUM_P; i++) {
+        if (((scheduler->queue)[i] & 0x7) == PID) {
+            (scheduler->queue)[i] = (scheduler->queue)[i] | ACTIVE;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+
+int8_t
+make_inactive(uint32_t PID)
+{
+    int i;
+    if (scheduler == NULL)
+        return -1;
+    for (i = 0; i < NUM_P; i++) {
+        if (((scheduler->queue)[i] & 0x7) == PID) {
+            (scheduler->queue)[i] = (scheduler->queue)[i] & ~ACTIVE;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+
+uint8_t
+shift_queue(sched_t * list)
+{
+    uint32_t temp = (scheduler->queue)[0];
+    int i;
+    if (sched_t == NULL)
+        return -1;
+    for (i = 1; i < NUM_P; i++) {
+        (scheduler->queue)[i - 1] = (scheduler->queue)[i];
+    }
+    (scheduler->queue)[NUM_P - 1] = temp;
+    return 0;
+}
+
+//-------------------------------------------------------------------------------------
+//--------------------------   TO BE IMPLEMENTED    -----------------------------------
+//-------------------------------------------------------------------------------------
+
+int8_t
+pause_process(uint32_t PID)
+{
+    return -1;
+}
+
+
+int8_t
+resume_process(uint32_t PID)
+{
+    return -1;
+}
+
+//-------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------
+

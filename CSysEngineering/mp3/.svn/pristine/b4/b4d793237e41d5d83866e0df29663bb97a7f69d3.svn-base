@@ -1,0 +1,370 @@
+.data
+	USER_DS = 0x002B
+	KERNEL_DS = 0x0018
+
+.text
+
+	.globl divide_error,debug,nmi,int3,overflow,bounds,invalid_op,device_not_available
+	.globl doublefault_fn,coprocessor_segment_overrun,invalid_TSS,segment_not_present
+	.globl stack_segment,general_protection,page_fault,floating_point,alignment_check
+	.globl machine_check,simd_coprocessor_error
+	.globl master_irq0,keyboard_handler,master_irq2,master_irq3,master_irq4,master_irq5,master_irq6,master_irq7
+	.globl rtc_handler,slave_irq0,slave_irq1,slave_irq2,slave_irq3,slave_irq4,slave_irq5,slave_irq6,slave_irq7
+	.globl system_call
+
+	.extern _halt,_execute,_read,_write,_open,_close,_getargs,_vidmap,_set_handler,_sigreturn,_init_pcb
+	.extern divide_error_c,debug_c,nmi_c,int3_c,overflow_c,bounds_c,invalid_op_c,device_not_available_c
+	.extern doublefault_fn_c,coprocessor_segment_overrun_c,invalid_TSS_c,segment_not_present_c
+	.extern stack_segment_c,general_protection_c,page_fault_c,floating_point_c,alignment_check_c
+	.extern machine_check_c,simd_coprocessor_error_c
+	.extern master_irq0_c,keyboard_handler_c,master_irq2_c,master_irq3_c,master_irq4_c,master_irq5_c,master_irq6_c,master_irq7_c
+	.extern rtc_handler_c,slave_irq0_c,slave_irq1_c,slave_irq2_c,slave_irq3_c,slave_irq4_c,slave_irq5_c,slave_irq6_c,slave_irq7_c
+
+#Intels interrupt wrappers so IRET works correctly
+divide_error:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call divide_error_c
+	jmp restore_return
+
+debug:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call debug_c
+	jmp restore_return
+
+nmi:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call nmi_c
+	jmp restore_return
+
+int3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call int3_c
+	jmp restore_return
+
+overflow:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call overflow_c
+	jmp restore_return
+
+bounds:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call bounds_c
+	jmp restore_return
+
+invalid_op:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call invalid_op_c
+	jmp restore_return
+
+device_not_available:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call device_not_available_c
+	jmp restore_return
+
+doublefault_fn:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call doublefault_fn_c
+	jmp restore_return
+
+coprocessor_segment_overrun:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call coprocessor_segment_overrun_c
+	jmp restore_return
+
+invalid_TSS:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call invalid_TSS_c
+	jmp restore_return
+
+segment_not_present:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call segment_not_present_c
+	jmp restore_return
+
+stack_segment:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call stack_segment_c
+	jmp restore_return
+
+general_protection:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call general_protection_c
+	jmp restore_return
+
+page_fault:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call page_fault_c
+	jmp restore_return
+
+floating_point:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call floating_point_c
+	jmp restore_return
+
+alignment_check:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call alignment_check_c
+	jmp restore_return
+
+machine_check:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call machine_check_c
+	jmp restore_return
+
+simd_coprocessor_error:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call simd_coprocessor_error_c
+	jmp restore_return
+
+	#Pic master irq line interrupts wrapper so IRET works correctly
+master_irq0:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq0_c
+	jmp restore_return
+
+keyboard_handler: 	 #master_irq1()
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call keyboard_handler_c
+	jmp restore_return
+
+master_irq2:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq2_c
+	jmp restore_return
+
+master_irq3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq3_c
+	jmp restore_return
+
+master_irq4:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq4_c
+	jmp restore_return
+
+master_irq5:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq5_c
+	jmp restore_return
+
+master_irq6:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq6_c
+	jmp restore_return
+
+master_irq7:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call master_irq7_c
+	jmp restore_return
+
+	#Pic slave irq line interrupts
+rtc_handler:		 #slave_irq0()
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call rtc_handler_c
+	jmp restore_return
+
+slave_irq1:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq1_c
+	jmp restore_return
+
+slave_irq2:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq2_c
+	jmp restore_return
+
+slave_irq3:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq3_c
+	jmp restore_return
+
+slave_irq4:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq4_c
+	jmp restore_return
+
+slave_irq5:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq5_c
+	jmp restore_return
+
+slave_irq6:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq6_c
+	jmp restore_return
+
+slave_irq7:
+	pushl %eax
+	pushl %ecx
+	pushl %edx
+	pushf 
+	call slave_irq7_c
+	jmp restore_return
+
+restore_return:
+	popf
+	popl %edx
+	popl %ecx
+	popl %eax
+	iret
+
+system_call:
+	pushw %es
+	pushw %ds
+	pushl %eax 	#movl %eax,24(%esp) changes this value
+	pushl %ebp	#ULK Page 163, PUSH ALL
+	pushl %edi
+	pushl %esi
+	pushl %edx
+	pushl %ecx
+	pushl %ebx
+	movl $KERNEL_DS,%esi
+	movl %esi,%ds
+	movl %esi,%es
+
+	#value checking
+	cmpl $0,%eax			
+	je error
+	cmpl $11,%eax
+	jae error
+
+	#push arguments
+	pushl %edx
+	pushl %ecx
+	pushl %ebx
+
+	#make the values indexes start at 0
+	subl $1,%eax
+	call *system_call_jumptable(,%eax,4)
+
+#restores the stack and sets return value
+	addl $12, %esp  	#removes arguments from the stack
+	movl %eax,24(%esp)	#populates the EAX register that lives on the stack
+	popl %ebx
+	popl %ecx
+	popl %edx
+	popl %esi	#POP ALL
+	popl %edi
+	popl %ebp
+	popl %eax
+	popw %ds
+	popw %es
+	iret
+
+error:
+	movl $-1,24(%esp)  #puts -1 into eax saved on stack
+	popl %ebx
+	popl %ecx
+	popl %edx
+	popl %esi	#POP ALL
+	popl %edi
+	popl %ebp
+	popl %eax
+	popw %ds
+	popw %es
+	iret
+
+system_call_jumptable:
+.long _halt,_execute,_read,_write,_open,_close,_getargs,_vidmap,_set_handler,_sigreturn

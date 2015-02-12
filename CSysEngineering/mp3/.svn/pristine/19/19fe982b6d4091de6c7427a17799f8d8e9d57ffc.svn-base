@@ -1,0 +1,53 @@
+#ifndef _PCB_STRUCT_H
+#define _PCB_STRUCT_H
+
+#include "lib.h"
+#include "types.h"
+#include "file_sys_struct.h"
+
+#define NUM_FID 		8
+#define BUFF_SIZE 		128
+
+#ifndef ASM
+
+
+
+typedef struct reg_desc
+{
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+	uint32_t ebi;
+	uint32_t esi;
+	uint32_t ebp;
+	uint32_t esp;
+	uint32_t eip;
+	uint32_t eflags;
+	uint32_t cr3;
+	uint32_t edi;
+} __attribute__((packed)) reg_t; //48 bytes
+
+
+typedef struct pcb_desc
+{
+	uint8_t occupado;
+	reg_t registers;
+	int32_t parent;
+	int32_t child;
+	uint32_t PID; 
+	uint8_t argument[BUFF_SIZE];
+	f_desc_t fid[NUM_FID];
+	uint32_t return_address;
+	uint32_t fail_address;
+	int32_t  return_value;
+	int8_t failure;
+	uint32_t terminal_number;
+} __attribute__((packed)) pcb_t; //189 bytes
+//directory entry structure
+
+extern pcb_t * current_process;
+extern uint32_t e_entry_shell;
+
+#endif
+#endif

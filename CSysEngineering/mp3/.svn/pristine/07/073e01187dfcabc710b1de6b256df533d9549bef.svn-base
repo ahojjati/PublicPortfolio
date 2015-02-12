@@ -1,0 +1,30 @@
+/* contains the handler for the keyboard
+possibly an initialization function 
+ anything keyboard related */
+#ifndef _HANDLER_H
+#define _HANDLER_H
+
+#include "lib.h"
+
+#define KEYBOARD_IRQ 	1
+#define KEYBOARD_PORT 	0x60
+#define LEFT_SHIFT 		0x2A
+#define LEFT_SHIFT_R 	0xAA
+#define RIGHT_SHIFT 	0x36
+#define RIGHT_SHIFT_R 	0xB6
+#define CTRL 			0x1D
+#define CTRL_R 			0x9D
+#define ALT 			0x38
+#define ALT_R 			0xB8
+
+
+//initialize the keyboard IRQ
+void keyboard_init();
+
+// keyboard handler function, particularly for control keys
+void keyboard_idt();
+
+// keypress handler for when characters have been pressed
+void key_press_read(uint8_t input);
+
+#endif /* _HANDLER_H */

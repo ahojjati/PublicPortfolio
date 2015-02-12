@@ -1,0 +1,44 @@
+// All necessary declarations for the Tux Controller driver must be in this file
+#include <asm/current.h>
+#include <asm/uaccess.h>
+
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/file.h>
+#include <linux/miscdevice.h>
+#include <linux/kdev_t.h>
+#include <linux/tty.h>
+#include <linux/spinlock.h>
+
+#include "tuxctl-ld.h"
+#include "tuxctl-ioctl.h"
+#include "mtcp.h"
+
+#ifndef TUXCTL_H
+#define TUXCTL_H
+
+#define TUX_SET_LED _IOR('E', 0x10, unsigned long)
+#define TUX_BUTTONS _IOW('E', 0x12, unsigned long*)
+#define TUX_INIT _IO('E', 0x13)
+#define TUX_READ_LED _IOW('E', 0x11, unsigned long*)
+#define TUX_LED_REQUEST _IO('E', 0x14)
+#define TUX_LED_ACK _IO('E', 0x15)
+
+void
+tuxctl_buttons(struct tty_struct* tty, struct file* file,
+               unsigned cmd, unsigned long arg);
+void
+tuxctl_set_led(struct tty_struct* tty, struct file* file,
+               unsigned cmd, unsigned long arg);
+int
+tuxctl_ack(struct tty_struct* tty, struct file* file,
+           unsigned cmd, unsigned long arg);
+void
+tuxctl_read_led(struct tty_struct* tty, struct file* file,
+                unsigned cmd, unsigned long arg);
+
+
+#endif

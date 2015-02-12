@@ -1,0 +1,268 @@
+/* tuxctl-ioctl.c
+ *
+ * Driver (skeleton) for the mp2 tuxcontrollers for ECE391 at UIUC.
+ *
+ * Mark Murphy 2006
+ * Andrew Ofisher 2007
+ * Steve Lumetta 12-13 Sep 2009
+ * Puskar Naha 2013
+ */
+
+#include <asm/current.h>
+#include <asm/uaccess.h>
+
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/file.h>
+#include <linux/miscdevice.h>
+#include <linux/kdev_t.h>
+#include <linux/tty.h>
+#include <linux/spinlock.h>
+
+#include "tuxctl-ld.h"
+#include "tuxctl-ioctl.h"
+#include "mtcp.h"
+
+#define debug(str, ...) \
+	printk(KERN_DEBUG "%s: " str, __FUNCTION__, ## __VA_ARGS__)
+
+
+/************************ Protocol Implementation *************************/
+
+/* tuxctl_handle_packet()
+ * IMPORTANT : Read the header for tuxctl_ldisc_data_callback() in 
+ * tuxctl-ld.c. It calls this function, so all warnings there apply 
+ * here as well.
+ */
+
+unsigned long leds;
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+void
+tuxctl_buttons(struct tty_struct* tty, struct file* file,
+                    unsigned cmd, unsigned long arg)
+{
+    //set the bits of the low byte
+    //corresponding to currently pressed buttons
+}
+
+void
+tuxctl_set_led(struct tty_struct* tty, struct file* file,
+                    unsigned cmd, unsigned long arg)
+{
+	//create a character array to store the parsed values in
+    char display[4];
+    char led_on;
+    char dec_on;
+    char msg[6];
+    int i;
+    display[0] = (char)(arg & 0x0000000F);
+    display[1] = (char)((arg & 0x000000F0) >> 4);
+    display[2] = (char)((arg & 0x00000F00) >> 8);
+    display[3] = (char)((arg & 0x0000F000) >> 12);
+    
+	//determine what is supposed to be turned on
+	led_on = (char)((arg & 0x000F0000) >> 16);
+    dec_on = (char)((arg & 0x0F000000) >> 24);
+    
+	//set the opcode
+    msg[0] = MTCP_LED_SET;
+	//tell it which LEDs to turn on
+	msg[1] = led_on;
+
+    
+    if ((int)led_on & 0x01) {
+        leds = ((leds & 0xFFFFFFF0) | display[0]);
+    }
+    else
+    {
+        display[0] = leds & 0x0000000F;
+    }
+    if (((int)led_on & 0x02)>>1) {
+        leds = ((leds & 0xFFFFFF0F) | display[1]);
+    }
+    else
+    {
+        display[1] = leds & 0x000000F0;
+    }
+    if (((int)led_on & 0x04)>>2) {
+        leds = ((leds & 0xFFFFF0FF) | display[2]);
+    }
+    else
+    {
+        display[2] = leds & 0x00000F00;
+    }
+    if (((int)led_on & 0x08)>>3) {
+        leds = ((leds & 0xFFFF0FFF) | display[3]);
+    }
+    else
+    {
+        display[3] = leds & 0x0000F000;
+    }
+    for(i = 2; i < 6; i++) //for each LED
+    {
+        switch(display[i-2])//display these values
+        {//move this to a function to call
+            case 0xD:
+            case 0x0:
+                msg[i] = (char)0xE7;
+                break;
+            case 0x1:
+                msg[i] = (char)0x06;
+                break;
+            case 0x2:
+                msg[i] = (char)0xCB;
+                break;
+            case 0x3:
+                msg[i] = (char)0x8F;
+                break;
+            case 0x4:
+                msg[i] = (char)0x2E;
+                break;
+            case 0x5:
+                msg[i] = (char)0xAD;
+                break;
+            case 0x6:
+                msg[i] = (char)0xED;
+                break;
+            case 0x7:
+                msg[i] = (char)0x86;
+                break;
+            case 0xB:
+            case 0x8:
+                msg[i] = (char)0xEF;
+                break;
+            case 0x9:
+                msg[i] = (char)0xAF;
+                break;
+            case 0xA:
+                msg[i] = (char)0xEE;
+                break;
+            case 0xC:
+                msg[i] = (char)0xE1;
+                break;
+            case 0xE:
+                msg[i] = (char)0xE9;
+                break;
+            case 0xF:
+                msg[i] = (char)0xE8;
+                break;
+            default:
+                msg[i] = (char)0x00;
+        }
+        if((dec_on>>(i-2))&0x1 || leds & (0x1>>(16+i-2)))//if the dp is supposed to be turned on
+        {
+            msg[i] = (char)((int)msg[i] | 0x10);//turn it on
+        }
+    }
+    tuxctl_ldisc_put(tty, msg, 6); //send the packet
+}
+
+int
+tuxctl_ack(struct tty_struct* tty, struct file* file,
+                unsigned cmd, unsigned long arg)
+{
+    //use MTCP_BIOC_EVENT
+    if ( 1 /*last request tux_led_request is completed*/) {
+        return 1;
+    }
+	//otherwise it is still going on, return 0
+    return 0;
+}
+
+void
+tuxctl_read_led(struct tty_struct* tty, struct file* file,
+                     unsigned cmd, unsigned long arg)
+{
+    //fill in LED value
+    //The format of the integer should be the same
+    //format accepted by TUX_SET_LED
+    //need to actually return the value received from the Tux
+    //use copy to user
+}
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+void tuxctl_handle_packet (struct tty_struct* tty, unsigned char* packet)
+{
+    unsigned a, b, c;
+
+    a = packet[0]; /* Avoid printk() sign extending the 8-bit */
+    b = packet[1]; /* values when printing them. */
+    c = packet[2];
+
+    /*printk("packet : %x %x %x\n", a, b, c); */
+}
+
+/******** IMPORTANT NOTE: READ THIS BEFORE IMPLEMENTING THE IOCTLS ************
+ *                                                                            *
+ * The ioctls should not spend any time waiting for responses to the commands *
+ * they send to the controller. The data is sent over the serial line at      *
+ * 9600 BAUD. At this rate, a byte takes approximately 1 millisecond to       *
+ * transmit; this means that there will be about 9 milliseconds between       *
+ * the time you request that the low-level serial driver send the             *
+ * 6-byte SET_LEDS packet and the time the 3-byte ACK packet finishes         *
+ * arriving. This is far too long a time for a system call to take. The       *
+ * ioctls should return immediately with success if their parameters are      *
+ * valid.                                                                     *
+ *                                                                            *
+ ******************************************************************************/
+
+int 
+tuxctl_ioctl (struct tty_struct* tty, struct file* file, 
+	      unsigned cmd, unsigned long arg)
+{
+    switch (cmd) {
+	case TUX_INIT:
+    {
+        leds = 0;
+        return 0;
+    }
+	case TUX_BUTTONS:
+    {
+    	//if we get a null ptr return error
+        if (arg == 0) {
+            return -EINVAL;
+        }
+        tuxctl_buttons(tty, file, cmd, arg);
+        return 0;
+    }
+	case TUX_SET_LED:
+    {
+        tuxctl_set_led(tty, file, cmd, arg);
+        return 0;
+    }
+    case TUX_LED_REQUEST:
+    {
+        //check with ACK
+        if (1 /*no request pending*/) {
+            return 0;
+        }
+	//otherwise a request IS pending
+        return -EFAULT;
+    }
+    case TUX_LED_ACK:
+    {
+        return tuxctl_ack(tty, file, cmd, arg);
+    }
+    case TUX_READ_LED:
+    {
+    	//if our parameter is invalid
+        if (arg == 0) {
+            return -EFAULT;
+        }
+        tuxctl_read_led(tty, file, cmd, arg);
+        return 0;
+    }
+	default: //for everything else the in value is wrong
+    {//return an error
+	    return -EINVAL;
+    }
+}

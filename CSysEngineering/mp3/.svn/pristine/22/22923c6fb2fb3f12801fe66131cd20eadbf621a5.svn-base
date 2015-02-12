@@ -1,0 +1,168 @@
+#include "sched.h"
+#include "lib.h"
+#include "types.h"
+
+
+sched_t * scheduler = (sched_t *) QUEUE_LOCATION;
+
+/*
+
+set the value stored at queue to 0 and return 0
+if the queue is not pointed at the correct location
+prints an error and returns -1
+
+*/
+
+int8_t init_sched()
+{
+	scheduler = (sched_t *) QUEUE_LOCATION;
+	scheduler->queue = 0x0000;
+	return 0;
+}
+
+
+/*
+
+find the first "off" position in the queue and
+add process C to the queue
+000000BA
+queue = 00000C00 | 000000BA
+to be used in execute>init_pcb
+
+*/
+int8_t add_process(uint32_t PID)
+{
+	if (scheduler != (sched_t *) QUEUE_LOCATION)
+	{
+		printf(" queue location is : %x", scheduler);
+		return -1;
+	}
+	int i;
+	uint32_t temp = scheduler->queue;
+	//for each process in the queue
+	for (i = 0; i < 8; ++i)
+	{
+		//if the position in the queue is empty
+		if (!((temp >> 3) & 1))
+		{
+			//occupy that position
+			scheduler->queue = ((((((scheduler->queue) >> 4*i) & PID & 7) | 0x8)) << 4*i) | ((scheduler->queue) & ~(0xF << 4*i));
+			//return no error
+			return 0;
+		}
+		//the position was not empty
+		temp = temp >> 4;
+	}
+	//the queue is full!
+	return -1;
+}
+
+/*
+
+checks to see if the queue is valid/occupied
+if not prints an error and returns -1
+if it is valid and occupied then it circular shifts the
+queue until it finds a task to be executed.
+
+It then switches to the next process by taking pausing the current
+process (storing esp, ebp, etc.) and using setup_page_process
+to flush cr3 and restore it appropriately.
+
+if the queue is empty it means that we don't need to schedule anything
+
+*/
+
+int8_t sched()
+{
+	return -1; //remove when we want scheduling to work
+	//check if the queue is valid
+	if (scheduler != (sched_t *) QUEUE_LOCATION)
+	{
+		printf("the queue is invalid!");
+		return -1;
+	}
+	else if ( scheduler->queue == 0)
+	{ //the queue is empty, we don't have to do anything
+		return 0;
+	}
+	//shift the queue so we can move on
+	do
+	{
+		scheduler->queue = circular_shift_right(scheduler->queue);
+	}
+	while(!((scheduler->queue >> 3) & 1));
+
+	//switch processes
+	//to be implemented
+
+	return 0;
+}
+
+
+/*
+
+used in sched
+circular shifts the queue so that the first
+process is the last, the second is the first, 
+the third is the second, etc.
+I have thought about changing this so instead of
+doing this:
+0000DCBA -> A0000DCB
+It does this:
+0000DCBA -> 0000ADCB
+
+The first is more efficient in terms of scheduling time
+the second is more efficient in terms of locating processes
+for deletion or insertion.
+Either way works because we always insert at the least
+significant "off" position.
+
+*/
+
+
+uint32_t circular_shift_right(uint32_t num)
+{
+	if (num == 0)
+	{
+		return 0;
+	}
+	return (num >> 4) | ((num & 0xF) << 28);
+}
+
+
+/*
+
+find the PID in the queue and
+delete process B in the queue
+0000DCBA
+temp = 00000DC0
+queue = 0000000A
+queue = 00000DCA
+to be used in halt
+
+*/
+
+int8_t delete_process(uint32_t PID)
+{
+	int i;
+	uint32_t temp = scheduler->queue;
+	//for each position in the queue
+	for ( i = 0; i < 8; ++i)
+	{
+		//if we have found the correct process
+		if ((temp & 0x7) == (PID & 0x7))
+		{
+			//save all of the upper bits (shifted right by 1)
+			temp = (scheduler->queue >> 4*(i+1)) << 4*i;
+			//save all the lower bits
+			scheduler->queue = (scheduler->queue & (0xFFFFFFFF >> 4*(8-i)));
+			//smash them together
+			scheduler->queue = scheduler->queue | temp;
+			return 0;
+		}
+		//if we havent found the process, shift right by 4
+		temp = temp >> 4;
+	}
+	//we haven't found the process
+	return -1;
+}

@@ -1,0 +1,10 @@
+rtfreed2 total : 0/100
+Testing task1	0/20	
+	*Failed*	
+Testing task2	0/25	
+	*Failed*	
+Testing task3	0/25	
+	*Failed*	
+Testing task4	0/30	
+	*Failed*	
+Testing task5(bonus)	0/10	You did not find the correct input string.	

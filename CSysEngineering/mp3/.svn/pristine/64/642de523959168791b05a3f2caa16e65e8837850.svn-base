@@ -1,0 +1,421 @@
+/*idt_handlers.c - all of the interrupt handler functions
+*/
+
+#include "int_handlers_c.h"
+#include "lib.h"
+#include "i8259.h"
+
+
+/* Exception handler function for divide by zero
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void divide_error_c()
+{
+	printf("Divide Error Exception!");
+	return;
+}
+
+/* Exception handler for debug
+ * PARAMETERS: nonefpa
+ * RETURNS: void
+ * INFO:
+ */
+void debug_c()
+{	
+	printf("Debug Exception!");	
+	return;
+}
+
+/* Exception handler for non maskable interrupt
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void nmi_c()
+{
+	printf("Non Maskable interrupt!");
+	return;
+}
+
+/* Exception handler for Breakpoint Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void int3_c()
+{
+	printf("Breakpoint Exception!");
+	return;
+}
+	
+/* Exception handler for Overflow Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void overflow_c()
+{
+	printf("Overflow Exception!");
+	return;
+}
+
+/* Exception handler for Bound Range Esceeded Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void bounds_c()
+{
+	printf("Bound Range Exceeded Exception!");
+	return;
+}
+
+/* Exception handler for Invalid Opcode Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void invalid_op_c()
+{
+	printf("Invalid Opcode Exception!");
+	return;
+}
+
+/* Exception handler for Device not available exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void device_not_available_c()
+{
+	printf("Device not Available Exception!");
+	return;
+}
+
+/* Exception handler for Double Fault Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void doublefault_fn_c()
+{
+	printf("Double Fault Exception!");
+	return;
+}
+
+/* Exception handler for Coprocessor Segment
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void coprocessor_segment_overrun_c()
+{
+	printf("Coprocessor Segment Overrun!");
+	return;
+}
+
+/* Exception handler for Invalid TSS exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void invalid_TSS_c()
+{
+	printf("Invalid TSS Exception!");
+	return;
+}
+
+/* Exception handler for Segment Not Present
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void segment_not_present_c()
+{
+	printf("Segment Not Present!");
+	return;
+}
+
+/* Exception handler for Stack Fault Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void stack_segment_c()
+{	
+	printf("Stack Fault Exception!");
+	return;
+}
+
+/* Exception handler for General Protection Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void general_protection_c()
+{
+	int error_code;
+	printf("General Protection Exception! \n");
+	asm volatile ("movl %%esp, %0":"=r"(error_code));
+	printf("Page Fault Exception error = %x! \n",error_code);
+	while(1);
+	return;
+}
+
+/* Exception handler for Page Fault Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void page_fault_c()
+{
+	printf("Page Fault Exception! \n");
+	while(1)
+	{
+	}
+	return;
+}
+
+/* Exception handler for Floating Point Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void floating_point_c()
+{
+	printf("x87 FPU Floating-Point Error!");
+	return;
+}
+
+/* Exception handler for Alignment Check Exception
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void alignment_check_c()
+{
+	printf("Alignment Check Exception!");
+	return;
+}
+
+/* Exception handler for machine check
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void machine_check_c()
+{
+	printf("Machine-Check Exception!");
+	return;
+}
+
+/* Exception handler for Floating Point
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void simd_coprocessor_error_c()
+{
+	printf("SIMD Floating-Point Exception!");
+	return;
+}
+
+
+/* Exception handler for master_irq0
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq0_c()
+{
+	//printf("Master irq0 reached!");
+	send_eoi(0);
+	return;
+}
+
+/*
+ Exception handler for master_irq1
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ 
+void master_irq1()
+{
+
+	//printf("Master irq1 reached!");				// Keyboard is using this Interrupt Line
+	send_eoi(0);
+	return;
+
+}*/
+
+/* Exception handler for master_irq2
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq2_c()
+{
+	//printf("Master irq2 reached!");
+	send_eoi(2);
+	return;
+}
+
+/* Exception handler for master_irq3
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq3_c()
+{
+	//printf("Master irq3 reached!");
+	send_eoi(3);
+	return;
+}
+
+/* Exception handler for master_irq4
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq4_c()
+{
+	//printf("Master irq4 reached!");
+	send_eoi(4);
+	return;
+}
+
+/* Exception handler for master_irq5
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq5_c()
+{
+	//printf("Master irq5 reached!");
+	send_eoi(5);
+	return;
+}
+
+/* Exception handler for master_irq6
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq6_c()
+{
+	//printf("Master irq6 reached!");
+	send_eoi(6);
+	return;
+}
+
+/* Exception handler for master_irq7
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void master_irq7_c()
+{
+	//printf("Master irq7 reached!");
+	send_eoi(7);
+	return;
+}
+
+/* Exception handler for slave_irq0
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ 
+void slave_irq0()
+{
+
+//	printf("Slave irq0 reached!");				// Real Time Clock is using interrupt line
+	send_eoi(0);
+	return;
+}*/
+
+/* Exception handler for slave_irq1
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq1_c()
+{
+	//printf("Master irq1 reached!");
+	send_eoi(9);
+	return;
+}
+
+/* Exception handler for slave_irq2
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq2_c()
+{
+//	printf("Slave irq2 reached!");
+	send_eoi(10);
+	return;
+}
+
+/* Exception handler for slave_irq3
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq3_c()
+{
+//	printf("Slave irq3 reached!");
+	send_eoi(11);
+	return;
+}
+
+/* Exception handler for slave_irq4
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq4_c()
+{
+
+//	printf("Slave irq4 reached!");
+	send_eoi(12);
+	return;
+}
+
+/* Exception handler for slave_irq5
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq5_c()
+{
+//	printf("Slave irq5 reached!");
+	send_eoi(13);
+	return;
+}
+
+/* Exception handler for slave_irq6
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq6_c()
+{
+//	printf("Slave irq6 reached!");
+	send_eoi(14);
+	return;
+}
+
+/* Exception handler for slave_irq7
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void slave_irq7_c()
+{
+//	printf("Slave irq7 reached!");
+	send_eoi(15);
+	return;
+}

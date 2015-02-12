@@ -1,0 +1,58 @@
+#include "x86_desc.h"
+#include "lib.h"
+#include "page.h"
+
+extern uint32_t * page_tab_kb;
+extern uint32_t * page_tab_mb;
+extern uint32_t * page_dir;
+
+void
+init_page_dir()
+{
+    page_dir[0] = (uint32_t) & page_tab_kb;
+    page_dir[1] = (uint32_t) & page_tab_mb;
+}
+
+
+void
+init_page_tab(uint32_t start_addr, uint32_t num, char megabyte)
+{
+    int i;
+    if(megabyte == 0)
+    {
+        for (i = 0; i < num; i++) {
+            page_tab_kb[i] = i*FOUR_KILO + start_addr;
+        }
+    }
+    else
+    {
+        for (i = 0; i < num; ++i)
+        {
+            page_tab_mb[i] = i*FOUR_MEGA + start_addr;
+        }
+    }
+
+}
+
+
+void
+init_pages()
+{
+    uint32_t temp;
+    //set up page table
+    init_page_tab(0, NUM_KB_PAGES, 0);
+    init_page_tab(page_tab_kb[NUM_KB_PAGES - 1] + FOUR_KILO, NUM_MB_PAGES, 1);
+    //set up page directory
+    init_page_dir();
+    //enable paging
+    asm volatile ("movl %%cr0, %0\n":"=S"(temp));
+    temp = temp | ENABLE_MASK;
+    asm volatile ("movl %0, %%cr0" : : "S"(temp));
+
+    asm volatile ("movl %%cr4, %0\n":"=S"(temp));
+    temp = temp | FOUR_MD;
+    asm volatile ("movl %0, %%cr4" : : "S"(temp));
+    //cr3 set to page_dir
+    asm volatile ("movl %0, %%cr3" : : "S"(page_dir));
+}
+

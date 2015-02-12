@@ -1,0 +1,114 @@
+//Header file for terminal driver
+#ifndef _TERMINAL_H
+#define _TERMINAL_H
+
+#include "lib.h"
+#include "types.h"
+#include "keyboard.h"
+#include "pcb_struct.h"
+#include "page.h"
+
+#define SCREEN_SIZE NUM_COLS * NUM_ROWS
+#define VMEM_START VIDEO
+#define VMEM_END VIDEO + SCREEN_SIZE
+#define BUFFER_SIZE 128
+#define NUM_TERMINALS 3
+#define TERMINAL_ADDRESS 4096    //Address of the terminal info structures
+
+
+#define HALT 	1
+#define EXEC 	2
+#define OPEN 	3
+#define READ 	4
+#define WRIT 	5
+#define CLOS 	6
+#define _RTC	0
+#define _FIL	2
+#define _DIR	1
+
+#define FILE_HEADER_SIZE 	40
+#define PROCESS_START_ADDR 	24
+#define START_ADDR_OFFSET 	3
+#define BYTE 				8
+#define PROGRAM_IMAGE 		0x08048000
+#define MB_128				0x08000000
+#define OFFSET 				0x48000
+#define FOUR_MB				0x400000
+#define FOUR_KB				0x1000
+#define KSTACK_SIZE			0x2000
+#define KSTACK_START        0x800000
+#define CURR_PROC_ADDR      0x08000000
+#define SIZE_OF_BOOTBLOCK	4096
+#define NUM_FID				8
+#define BIG_NUMBER			5000000
+
+
+#ifndef ASM
+
+typedef struct terminal_info
+{
+	uint32_t terminal_number;
+	uint8_t line_buf[BUFFER_SIZE];
+	uint8_t line_buf_index;
+	int wrap_flag;
+	int newline_flag;
+	int write_lock;
+	uint8_t screen_data[2*80*25];
+	int screen_x;
+	int screen_y;
+	uint32_t flag;
+} __attribute__((packed)) terminal_info_t;
+
+extern int write_lock;
+
+extern terminal_info_t * current_terminal;  //Pointer to the current terminal
+
+extern terminal_info_t * terminal_array;
+
+void init_terminals(void);
+
+int32_t terminal_read(int32_t fd, void * buf, int32_t nbytes);
+
+int32_t terminal_write(int32_t fd, const void * buf, int32_t nbytes);
+
+int32_t terminal_open(int32_t terminal_number);
+
+int32_t terminal_close();
+
+void clear_screen();
+
+void clear_screen_data(int32_t terminal_number);
+
+void general_scroll(int32_t terminal_number);
+
+void physical_scroll(void);
+
+void clear_line_buffer(int32_t terminal_number);
+
+int line_buffer_add(uint8_t c, int32_t terminal_number);
+
+int line_buffer_delete(int32_t terminal_number);
+
+int screen_delete(void);
+
+int vid_buffer_delete(int32_t terminal_number);
+
+void screen_add_char(uint8_t c);
+
+void buffer_add_char(uint8_t c, uint32_t terminal_number);
+
+int32_t switch_terminals(uint32_t num);
+
+//The following function was added for mp3.5
+void buffer_putc(uint8_t c, uint32_t terminal_number);
+
+/******Functions below are not implemented yet******/
+
+int32_t scroll_up(void);
+
+int32_t scroll_down(void);
+
+#endif /* ASM */
+
+#endif /* TERMINAL_H */
+

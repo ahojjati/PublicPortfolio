@@ -1,0 +1,133 @@
+#include "file_sys.h"
+//#include <stdio.h>
+
+//tasks to carry out:
+//FILE SYSTEM DRIVER:
+//  File & Directory open/close/read/write (1)
+//  Read text file (1)
+//  Read non-text file (1)
+//  Read Large Files (1)
+//  Read Directory (1)
+
+
+// fs_dir_read and fs_read are the only two files that
+// do anything because our fs is read only
+
+//--------------directory orwc functions--------------
+
+/*
+ * DESCRIPTION : Open a directory in filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Absolutely nothing
+ *
+ */
+void
+fs_dir_open(char buffer[], int count)
+{
+    return;
+}
+ 
+/*
+ * DESCRIPTION : Read a directory in filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Similar to ls, allows user to read contents of directory
+ *
+ */
+void
+fs_dir_read(char buffer[], int count)
+{
+    
+}
+
+/*
+ * DESCRIPTION : Write a directory to our filesystem
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : Does absolutely nothing
+ *
+ */
+void
+fs_dir_write(char buffer[], int count)
+{
+    return;
+}
+
+/*
+ * DESCRIPTION : Closes a directory in our file system
+ * INPUTS : buffer and count
+ * OUTPUTS : int
+ * RETURN VALUE : -1, always
+ * SIDE EFFECTS : Does nothing
+ *
+ */
+int
+fs_dir_close(char buffer[], int count)
+{
+    return -1;
+}
+
+
+
+//--------------file orwc functions--------------
+
+
+/*
+ * DESCRIPTION : Open a file
+ * INPUTS :buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : none, does nothing
+ *
+ */
+void
+fs_open(char buffer[], int count)
+{
+    return;
+}
+
+/*
+ * DESCRIPTION : Read a file
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : puts number of bytes in buffer to count
+ *
+ */
+void
+fs_read(char buffer[], int count)
+{
+    
+}
+
+/*
+ * DESCRIPTION : Writes a file
+ * INPUTS : buffer and count
+ * OUTPUTS : returns -1
+ * RETURN VALUE : -1 always
+ * SIDE EFFECTS : Does nothing because our fs is READ ONLY!!!
+ *
+ */
+int
+fs_write(char buffer[], int count)
+{
+    return -1;
+}
+
+/*
+ * DESCRIPTION : Closes a file
+ * INPUTS : buffer and count
+ * OUTPUTS : none
+ * RETURN VALUE : none
+ * SIDE EFFECTS : this filesystem is read only, we don't need most of this
+ *
+ */
+void
+fs_close(char buffer[], int count)
+{
+    return;
+}

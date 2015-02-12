@@ -1,0 +1,62 @@
+#ifndef SCHED_H_
+#define SCHED_H_
+
+
+#include "lib.h"
+#include "types.h"
+#include "file_sys_struct.h"
+
+
+#define QUEUE_LOCATION		0x32000 //200 kb
+#define WORK_TIME			50
+
+/*
+	Here's the idea behind the 32 bit queue
+	We have 8 processes, each one gets 4 bits:
+	---------------------------------
+	|  ON/OFF  |  P2  |  P1  |  P0  |
+	---------------------------------
+	ON/OFF says whether or not that position in
+	the queue is occupied by a PID
+	P# is a number that corresponds to 0-7 representing
+	which process we are looking at.
+	With this we can make use a simple circular shift to keep
+	track of which process is next.
+	queue is defined in the .c file but I put this here
+	because it is ugly.
+ */
+
+typedef struct sched
+{
+	uint32_t queue;
+} __attribute__((packed)) sched_t;
+
+
+
+//schedules
+//every WORK_TIME ms we call sched and switch to the next
+//process in the queue
+//returns 0 on success, -1 on failure
+int8_t sched();
+
+//circular shift right, sort of self-explanatory
+//returns something circular shifted right in 4 bit increments
+uint32_t circular_shift_right(uint32_t);
+
+//initializes the scheduler
+//returns 0 on success, -1 if the queue is messed up
+int8_t init_sched();
+
+//adds a process to the scheduler
+//returns 0 on success, -1 if the queue is full or messed up
+int8_t add_process(uint32_t);
+
+//note that "messed up" in this context means that it is pointing at
+//the wrong location
+
+//removes the process from the queue
+//returns -1 if the process was not in the queue
+//returns 0 on success
+int8_t delete_process(uint32_t PID);
+
+#endif

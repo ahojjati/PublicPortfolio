@@ -1,0 +1,62 @@
+//contains the handler for the rtc
+//possibly an initialization function 
+// anything rtc related
+
+#include "i8259.h"
+#include "lib.h"
+#include "rtc.h"
+
+
+/*
+ * rtc_init
+ * Description: sets up the RTC and enables the IRQs on the appropriate PICs
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: Enables IRQs 2 and 8; initializes the frequency and divsisor for RTC 
+ */
+void rtc_init()
+{
+	uint8_t prev;
+
+	// open appropriate IRQs
+	enable_irq(RTC_IRQ);
+	enable_irq(SLAVE);
+
+	// set rate value in Register A
+	outb(RTC_REG_A, RTC_PORT);
+	outb(SLOW, RTC_DATA);
+
+	// grab previous value of register B
+	outb(RTC_REG_B, RTC_PORT);
+	prev = inb(RTC_DATA);
+
+	// write to register B and turn on bit 6 of it
+	outb(RTC_REG_B, RTC_PORT);
+	outb(prev | BIT_SIX, RTC_DATA);
+	
+	
+}
+
+/*
+ * rtc_idt
+ * Description: handler for the RTC that calls test_interrupts
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: clears regsister C in RTC so RTC interrupts can come again
+ */
+void rtc_handler_c()
+{
+	//clear();
+	//printf("rtc, achieved");
+
+	//****Comment this out since rtc interrupts are working
+	//test_interrupts();
+
+	// clear register C
+	outb(RTC_REG_C, RTC_PORT);
+	inb(RTC_DATA);
+
+	send_eoi(RTC_IRQ);
+}

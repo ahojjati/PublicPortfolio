@@ -1,0 +1,620 @@
+//system_call.c where all the system calls are handled
+#include "system_call.h"
+#include "pcb_struct.h"
+#include "sched.h"
+
+static f_ops_t terminal_ops;
+static f_ops_t rtc_ops;
+static f_ops_t fs_ops;
+static f_ops_t fd_ops;
+
+extern pcb_t * current_process;
+
+/* 
+ * int32_t _halt (uint8_t status);
+ * Description: Once an executable terminates, this function is used to restore the state of the processor back to that 
+ *				of the previous process
+ * Inputs: status - 8 bit value to be expanded and returned as a 32 bit value
+ * Outputs: NONE
+ * Returns: expanded status value, 0 on success, or -1 if trying to halt out of no processes whatsoever
+ * Side Effects: None
+ */
+int32_t _halt (uint8_t status)
+{
+	uint32_t temp_ret_add;
+	int i;
+	//printf("assembly linkage works for _halt");
+	/* Terminates process returning status to parent
+	 * The system call handler
+	 * itself is responsible for expanding the 8-bit argument
+	 * from BL into the 32-bit return value to the parent program’s
+	 * execute system call. Be careful not to return all 32 bits
+	 * from EBX. This call should never return to the caller
+	 */
+
+	 //clear current process of all values
+	 //set current process to parent process after restoring values
+	
+	if (current_process == NULL)
+	{
+		return -1;
+	}
+	delete_process(((uint32_t)current_process->PID));
+	for (i = 2; i < NUM_FID; ++i)
+	{
+		(current_process->fid)[i].flags = 0;
+	}
+	current_process->occupado = 0;
+	if (current_process->parent != -1 && current_process->failure == 0)
+	{
+	 	setup_page_process(current_process->parent);
+		asm volatile ("movl %0, %%esp" :: "a" ((current_process->registers).esp));
+		asm volatile ("movl %0, %%ebp" :: "a" ((current_process->registers).ebp));
+ 	 	tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->PID+1);
+	 	current_process->return_value = status;
+		asm volatile ("" ::"a"(status));
+		asm volatile ("jmp *%0" : : "b" ((current_process->return_address)));
+	}
+	else if (current_process->failure == 0)
+	{
+	 	tss.esp0 = KSTACK_START;
+		asm volatile ("" ::"a"(status));
+		temp_ret_add = current_process->return_address;
+		asm volatile ("movl %0, %%esp" :: "a" (initial_registers.esp));
+		asm volatile ("movl %0, %%ebp" :: "a" (initial_registers.ebp));
+		current_process = NULL;
+		asm volatile ("jmp *%0" : : "b" ((initial_registers.eip)));
+	}
+	else if (current_process->failure == 1 && current_process->parent != -1)
+	{
+		
+		setup_page_process(current_process->parent);
+ 	 	tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->PID+1);
+	 	current_process->return_value = status;
+		asm volatile ("movl %0, %%esp" :: "a" ((current_process->registers).esp));
+		asm volatile ("movl %0, %%ebp" :: "a" ((current_process->registers).ebp));
+		asm volatile ("" ::"a"(status));
+		asm volatile ("jmp *%0" : : "b" ((current_process->fail_address)));	
+	}
+	return 0;
+}
+
+
+/*
+ * void init_file_ops()
+ * Description: Function called to intialize the four file operation tables per the different needed file types
+ * Inputs: NONE
+ * Outputs: NONE
+ * Returns: NONE
+ * Side EFfects: initializes rtc_ops, terminal_ops, fs_ops, and fd_ops (all file operation tables) 
+ */
+void init_file_ops()
+{
+	//initialize the file_ops
+	rtc_ops.open  = rtc_open;
+	rtc_ops.close = rtc_close;
+	rtc_ops.read  = rtc_read;
+	rtc_ops.write = rtc_write;
+	terminal_ops.open  = terminal_open;
+	terminal_ops.close = terminal_close;
+	terminal_ops.read  = terminal_read;
+	terminal_ops.write = terminal_write;
+	fs_ops.open  = fs_open;
+	fs_ops.close = fs_close;
+	fs_ops.read  = fs_read;
+	fs_ops.write = fs_write;
+	fd_ops.open  = fs_dir_open;
+	fd_ops.close = fs_dir_close;
+	fd_ops.read  = fs_dir_read;
+	fd_ops.write = fs_dir_write;
+}
+
+//prnt = parent pid
+//-1 if there is no parent
+
+/*
+ * uint32_t init_pcb(int32_t prnt)
+ * Description: Function called to intialize a new pcb for a newly requested process
+ * Inputs: prnt - the PID number of the process that is trying to execute a new proces on top of itself
+ * Outputs: NONE
+ * Returns: Associated PID with the new process
+ * Side EFfects: Creates a new PCB struct at the top of the kernel stack for the appropriate new process
+ */
+uint32_t init_pcb(int32_t prnt)
+{
+	uint8_t pcb_num;
+	uint32_t i;
+	uint8_t temp;
+	current_process = (pcb_t * ) CURR_PROC_ADDR;
+	//find an empty pcb
+	for( i = 0 ; i < NUM_PROCESSES ; i ++ )
+	{
+		setup_page_process(i);
+		if (!(current_process->occupado))
+		{
+			add_process(i);
+			pcb_num = i;
+			current_process->occupado = 1;
+			(current_process->fid)[0].offs = 0;
+			(current_process->fid)[0].flags = 1;
+			(current_process->fid)[0].fops = & terminal_ops;
+			(current_process->fid)[0].inode = NULL;
+			(current_process->fid)[1].offs = 0;
+			(current_process->fid)[1].flags = 1;
+			(current_process->fid)[1].fops = & terminal_ops;
+			(current_process->fid)[1].inode = NULL;
+			current_process->parent = prnt;
+			current_process->failure = 0;
+			if (i == 0 || i == 1 || i == 2)
+			{
+				current_process->terminal_number = i;		//will have to change this condition
+			}
+			else
+			{
+				setup_page_process(prnt);
+				temp = current_process->terminal_number;
+				setup_page_process(i);
+				current_process->terminal_number = temp;
+			}
+			break;
+		}
+		if (i == NUM_PROCESSES - 1)
+		{
+			setup_page_process(prnt);
+			return -1;
+		}
+	}
+
+	//set up the argument
+	for( i = 0; i < BUFF_SIZE; i++)
+	{
+		(current_process->argument)[i] = ' ';
+	}
+	//set up the remainder of the parameters
+
+
+	//go back to the parent pcb if there is one
+	if (prnt >= 0 && prnt < NUM_PROCESSES)
+	{
+		setup_page_process(prnt);
+		//set the child pcb of the parent
+		current_process->child = pcb_num;
+		//set back to the correct pcb
+		setup_page_process(pcb_num);
+	}
+	else
+	{
+		current_process->parent = -1;
+	}
+	return pcb_num;
+}
+
+/* 
+ * int32_t _execute (const uint8_t* command)
+ * Description: attemps to load and execute a new program, handing off processor to new program until it terminates
+ * Inputs: command - string of words separated by spaces
+ * 						- first word is name of executable
+ *						- rest of words w/o spaces are arguments to be passed in on call from _getargs
+ * Outputs: none
+ * Returns: -1 - command can't be executed
+ *			256 - exception occurs
+ *			0-255 - program executes a _halt system call and returns whatever is passed into _halt
+ * Side Effects: hands off processor to new process
+ */
+int32_t _execute (const uint8_t* command)
+{
+	//printf("assembly linkage works for _execute");
+
+
+	uint8_t cmd[BUFF_SIZE];
+	uint8_t xfile_name[BUFF_SIZE], file_header[FILE_HEADER_SIZE];
+	uint32_t i = 0, j = 0, k = 0, e_entry = 0, flag = 0, iterator, check;
+	dentry_t new_dentry;
+	int hacky = 1;
+
+	// check to see if pointer is valid
+	if(command == NULL)
+		return -1;
+
+	if (current_process == NULL)
+	{
+		asm volatile("movl %%esp, %0" : "=a" ((initial_registers).esp):);
+		asm volatile("movl %%ebp, %0" : "=a" ((initial_registers).ebp):);
+	}
+	else
+	{
+		asm volatile("movl %%esp, %0" : "=a" ((current_process->registers).esp):);
+		asm volatile("movl %%ebp, %0" : "=a" ((current_process->registers).ebp):);
+	}
+
+    /* not enough space in the pcb array */
+    strncpy((int8_t*)cmd,(int8_t*)command, BUFF_SIZE);
+    if (current_process == NULL)
+    {
+    	check = init_pcb(-1);	
+    }
+    else
+    {
+   		check = init_pcb((current_process)->PID);
+	}
+    if (check == -1)
+    {
+    	return -1;
+    }
+    else
+    {
+    	current_process->PID = check;
+    }
+    
+    asm volatile ("movl $get_eip, %%eax" ::);
+	asm volatile ("movl %%eax, %0" : "=a" (current_process->return_address));
+	asm volatile ("movl $failed_command, %%eax" ::);
+	asm volatile ("movl %%eax, %0" : "=a" (current_process->fail_address));
+/* parse through cmd to get file name and arguments in appropriate forms */
+
+	/* get the name of the possible executable file */
+	while(cmd[i] != '\n' && cmd[i] != '\0')
+	{
+		if (flag == 0 && cmd[i] == ' ')
+		{
+			i++;
+		}
+		else if (flag == 1 && cmd[i] == ' ')
+		{
+			break;
+		}	
+		else
+		{
+			flag = 1;
+			xfile_name[k] = cmd[i];
+			i++;
+			k++;
+		}
+	}
+	xfile_name[i] = '\0';
+	/* put arguments into appropriate form in case call from _getargs occurs */
+	while(cmd[i] != '\n' && cmd[i] != '\0')
+	{
+		if (cmd[i] != ' ')
+		{
+			(current_process->argument)[j] = cmd[i];
+			j++;
+			i++;
+		}
+		else
+		{
+			i++;
+		}
+	}
+	(current_process->argument)[j] = '\0';
+/* check to see whether an executable file */
+//printf("xfilename = %s",xfile_name);
+
+	if (read_dentry_by_name(xfile_name, &new_dentry) == -1)
+	{
+		current_process->failure = 1;
+		_halt(255);
+	}
+	//printf("%d",read_dentry_by_name(xfile_name, &new_dentry));
+	/* check to see if the copied dentry values contains a valid inode_num */
+ 
+    if (read_data(new_dentry.inode_num, 0, file_header, FILE_HEADER_SIZE) < FILE_HEADER_SIZE)
+	{
+		current_process->failure = 1;
+		_halt(255);
+	}
+
+    /* check to see if the file is an executable; first 4 bytes should read 0x7F, E, L, F */
+    if (!(file_header[0] == 0x7F && file_header[1] == 'E' && file_header[2] == 'L' && file_header[3] == 'F'))
+	{
+		current_process->failure = 1;
+		_halt(255);
+	}
+
+/* start the new process */
+
+    /* grab the memory address from file header of the entry point of where the process starts executing */
+    for (iterator = START_ADDR_OFFSET; iterator >= 0; iterator--)
+    {
+    	e_entry += file_header[iterator + PROCESS_START_ADDR];
+    	if (iterator == 0)
+    		break;
+    	e_entry = e_entry << BYTE;
+    }
+
+    //Load executable file into memory
+    read_data(new_dentry.inode_num, 0, (uint8_t*)PROGRAM_IMAGE, BIG_NUMBER);
+
+
+/* In line assembly to switch the stacks appropriately */
+
+    cli();
+    asm volatile ("pushl %0 \n" :: "r"(USER_DS));
+    asm volatile ("pushl %0 \n" :: "r"(MB_128+FOUR_MB-4));
+    asm volatile ("pushfl");
+    asm volatile ("orl $0x200, (%%esp)" ::);
+    asm volatile ("pushl %0 \n" :: "r"(USER_CS));
+    asm volatile ("pushl %0 \n" :: "r"(e_entry));
+ 	tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->PID+1);
+    asm volatile ("iretl");
+
+    if(hacky == 1)
+    {
+    	asm volatile ("get_eip:" ::);
+		return 0;
+	}
+
+	asm volatile ("failed_command:"::);
+
+	return -1;
+
+}
+
+
+/* 
+ * int32_t _read (int32_t fd, void* buf, int32_t nbytes)
+ * Description: System call that checks whether an appropriate file is trying to be read from and then calls 
+ * 				the appropriate read function based on the associated fops table
+ * Inputs: fd - file descriptor number
+ *		   buf - pointer to the buffer to be read into
+ * 		   nbytes - number of bytes to be read
+ * Outputs: NONE
+ * Returns: The number of bytes read or 0 if the end of the file was reached
+ * Side Effects: Changes offset of the associated file descriptor of the file being read from
+ */
+int32_t _read (int32_t fd,void* buf,int32_t nbytes)
+{
+	//printf("assembly linkage works for _read");
+	//Possiblie issue: open is never called on this file descriptor,
+	//thus the flags bit will always be zero and we will always 
+	//return -1
+	if (fd < 0 || fd > 7 || !((current_process->fid)[fd]).flags || fd == 1 || buf == NULL)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->read(fd, buf, nbytes);
+}
+
+
+/* 
+ * int32_t _write (int32_t fd, void* buf, int32_t nbytes)
+ * Description: System call that checks whether an appropriate file is trying to be written to and then calls 
+ * 				the appropriate write function based on the associated fops table
+ * Inputs: fd - file descriptor number
+ *		   buf - pointer to the buffer to be written from
+ * 		   nbytes - number of bytes to be written
+ * Outputs: NONE
+ * Returns: The number of bytes written
+ * Side Effects: None
+ */
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes)
+{
+	//printf("assembly linkage works for _write");
+	if (fd <= 0 || fd > 7 || !((current_process->fid)[fd]).flags || buf == NULL)
+	{
+		return -1;
+	}
+	return (((current_process->fid)[fd]).fops)->write(fd, buf, nbytes);
+}
+
+
+/* 
+ * int32_t _open (const uint8_t* filename)
+ * Description: Opening a new file, so we create a new associated file descriptor for it and initialize the members
+ *				with the appropriate values
+ * Inputs:	filename - pointer to the buffer with the associated filename that must be opened
+ * Outputs: NONE
+ * Returns: The associated FID number
+ * Side Effects: Creates and initializes a new file descriptor associated with the process
+ */
+int32_t _open (const uint8_t* filename)
+{
+	//printf("assembly linkage works for _open");
+	dentry_t dt;
+	uint32_t temp;
+	f_desc_t desc;
+	int i;
+	int8_t fid_num = -1;
+
+	// NULL pointer check
+	if (filename == NULL)
+		return -1;
+
+	temp = read_dentry_by_name(filename, &dt);
+	for (i = 0; i < 8; ++i)
+	{
+		if (!((current_process->fid)[i]).flags)					//<--------------------Flags of 1 will evaluate true but flags of 0 means its open
+		{
+			fid_num = i;
+			//Modified for testing...
+			//(current_process->fid)[i].flags = 1;
+			//desc = (current_process->fid)[i];
+			break;
+		}
+	}
+	if (temp == -1 || fid_num == -1 || fid_num == 0 || fid_num == 1)
+	{
+		//printf("Something went horribly horribly awry...");
+		return -1;
+	}
+	//this is very ugly but we use it to find the address of the corresponding inode, hope it works
+	desc.flags = 1;
+	desc.offs = 0;
+	switch(dt.file_type)
+	{
+		case _RTC:
+		{
+			desc.inode = NULL;
+			desc.fops = & rtc_ops;
+			desc.fops->open();
+			break;
+		}
+		case _FIL:
+		{
+			desc.inode = (index_node_t * )((uint32_t)bootblock + SIZE_OF_BOOTBLOCK + ((dt.inode_num)*sizeof(index_node_t)));
+			desc.fops = & fs_ops;
+			desc.fops->open();
+			break;
+		}
+		case _DIR:
+		{
+			desc.inode = NULL; //(index_node_t * )((uint32_t)bootblock + (uint32_t)sizeof(bootblock) + ((dt.inode_num)*sizeof(index_node_t)));
+			desc.fops = & fd_ops;
+			desc.fops->open();
+			break;
+		}
+		default:
+		{
+			return -1;
+		}
+	}
+	//Commented out for testing
+	(current_process->fid)[(uint32_t)fid_num] = desc;
+	return fid_num;
+}
+/* 
+ * int32_t _close (int32_t fd)
+ * Description: Closes the file, which means setting the contents of the associated file descriptor to 'empty' and 
+ * 				allowing the file descriptor to be used again
+ * Inputs:	fd - the file descriptor number of the file to close
+ * Outputs: None
+ * Returns: 0 on success, -1 on failure
+ * Side Effects: Closes a file descriptor
+ */
+int32_t _close (int32_t fd)
+{
+//printf("assembly linkage works for _close");
+	if(current_process == NULL || fd <= 1 || fd > 7 || ((current_process->fid)[fd]).flags == 0)
+		return -1;
+	((current_process->fid)[fd]).fops = NULL;
+	((current_process->fid)[fd]).inode = NULL;
+	((current_process->fid)[fd]).offs = 0;
+	((current_process->fid)[fd]).flags = 0;
+	return 0;
+}
+/* 
+ * int32_t _getargs (uint8_t* buf, uint32_t nbytes)
+ * Description: Grabs the parsed arguments from the associated process
+ * Inputs: buf - pointer to the buffer which the arguments should be copied into
+ *		   nbytes - number of bytes to copy/grab
+ * Outputs: None
+ * Returns: -1 on failure, 0 on success
+ * Side Effects: None
+ */
+ int32_t _getargs (uint8_t* buf, uint32_t nbytes)
+{
+       int i;
+       
+       // NULL check
+       if(buf == NULL)
+       {
+               return -1;
+       }
+       for(i = 0;i<BUFF_SIZE;i++)
+       {
+               if(current_process->argument[i] == '\0')
+               {
+                       memcpy(buf,current_process->argument,BUFF_SIZE);
+                       //printf("%s",buf);
+                       return 0;
+               }
+       }
+       return -1;
+}
+/* 
+ * int32_t _vidmap (uint8_t** screen_start)
+ * Description: Maps text-mode video memory into user space at a pre-set virtual address, 
+ * 				assuming that the address is valid (within the single user-level page)
+ * Inputs: screen_start - pointer to a pointer in which we want to map the video memory into
+ *						  the user level page
+ * Outputs: NONE
+ * Returns: address it stores the video memory at
+ * Side Effects: Creates a new 4kB page for the current process inside the process's user space 
+ */
+int32_t _vidmap (uint8_t** screen_start)
+{
+
+
+	if ((uint32_t)screen_start < MB_128 || (uint32_t)screen_start > (MB_128+FOUR_MB))
+	{
+		return -1;
+	}
+
+	*screen_start = (uint8_t *)VIDEO;
+
+	// printf("assembly linkage works for _vidmap");
+	return 0;
+
+}
+
+/*****************EXTRA CREDIT************************/
+/* 
+ * _set_handler
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _set_handler (int32_t signum, void* handler_address)
+{
+	// printf("assembly linkage works for _set_handlers");
+	return 0;
+}
+/* 
+ * _sigreturn
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _sigreturn (void)	
+{
+	// printf("assembly linkage works for _sigreturn");
+	return 0;
+}
+
+
+void execute_shells()
+{
+	int i = 0;
+	int iterator = 0;
+	dentry_t dentry;
+	uint8_t cmd[BUFF_SIZE];
+	uint8_t * xfile_name = "shell\0";
+	uint8_t file_header[FILE_HEADER_SIZE];
+	e_entry_shell = 0;
+	init_pcb(-1); //process 0
+	init_pcb(-1); //process 1
+	init_pcb(-1); //process 2
+
+	for (i = 0; i < 3; ++i)
+	{
+		setup_page_process(i);
+		asm volatile ("movl $get_eip, %%eax" ::);
+		asm volatile ("movl %%eax, %0" : "=a" (current_process->return_address));
+		asm volatile ("movl $failed_command, %%eax" ::);
+		asm volatile ("movl %%eax, %0" : "=a" (current_process->fail_address));
+	}
+
+	read_dentry_by_name(xfile_name, &dentry);
+	read_data(dentry.inode_num, 0, file_header, FILE_HEADER_SIZE);
+	for (iterator = START_ADDR_OFFSET; iterator >= 0; iterator--)
+    {
+    	e_entry_shell += file_header[iterator + PROCESS_START_ADDR];
+    	if (iterator == 0)
+    		break;
+    	e_entry_shell = e_entry_shell << BYTE;
+    }
+	setup_page_process(2);
+	read_data(dentry.inode_num, 0, (uint8_t*)PROGRAM_IMAGE, BIG_NUMBER);
+	setup_page_process(1);
+	read_data(dentry.inode_num, 0, (uint8_t*)PROGRAM_IMAGE, BIG_NUMBER);
+	setup_page_process(0);
+	read_data(dentry.inode_num, 0, (uint8_t*)PROGRAM_IMAGE, BIG_NUMBER);
+ 	tss.esp0 = KSTACK_START-2*FOUR_KB*(current_process->PID+1);
+ 	init_terminals();
+}
+
+

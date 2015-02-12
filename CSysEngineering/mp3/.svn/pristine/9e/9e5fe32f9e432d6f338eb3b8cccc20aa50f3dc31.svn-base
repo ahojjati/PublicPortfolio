@@ -1,0 +1,178 @@
+/*page.c sets up page tables and directories*/
+
+#include "x86_desc.h"
+#include "lib.h"
+#include "page.h"
+
+
+//page table and directory defined in x86_desc.S
+extern page_table_entry page_tab[PAGE_TABLE_SIZE];
+extern page_dir_entry page_dir[PAGE_DIR_SIZE];
+
+/*init_paging
+ * Description: Initializes the page directory table,page table,video memory, and kernel code
+ *               with pointter to a page table or physical memory
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: Initializes the page directory table,page table,video memory, and kernel code
+ *               with pointter to a page table or physical memory
+ */
+
+void init_paging()
+{
+    unsigned int cr0=0;
+    unsigned int cr4=0;
+    uint32_t page_table_msb20 = (uint32_t)page_tab >> 12;
+    // sets up the page directory
+    setup_page_dir(page_dir);
+
+    // Populate entry 0 and 1 
+    add_page_dir_entry(page_dir,0,page_table_msb20,BOOL_KB_PAGE_TRUE,USER);
+    add_page_dir_entry(page_dir,1,KERNEL_ADDRESS,BOOL_KB_PAGE_FALSE,SUPERVISOR);
+    
+    //sets up the page table for the 4kb pages
+    setup_page_table(page_tab);
+
+    //Adds video memory
+    add_page_table_entry(page_tab,VIDEO_MEM_20_MOST_SIG_BITS_PAGE_TAB,VIDEO_MEM_20_MOST_SIG_BITS_PAGE_TAB,USER);
+
+    asm volatile ("mov %%CR4, %0":"=c"(cr4));
+    cr4 |= FOUR_MD;
+    asm volatile ("mov %0, %%CR4"::"c"(cr4));
+
+    asm volatile("mov %0, %%CR3":: "c"(page_dir));
+
+    asm volatile("mov %%CR0, %0": "=c"(cr0));
+    cr0 |= ENABLE_MASK;                 
+    asm volatile("mov %0, %%CR0":: "c"(cr0));
+}
+    
+/*
+ setup_page_dir
+ * Description: Initializes the page directory table by setting the RW bit
+ * Inputs: page_directory- page dir entry structure that is used to set up a generic directory table
+ * Outputs: none
+ * Returns: none
+ * Side Effects: sets up a Page directory table specified
+ */
+void setup_page_dir(page_dir_entry* page_directory)
+{
+    int table_entry;  // ranges from 0 to 1023
+        for(table_entry=0; table_entry< NUM_TABLE_ENTRIES; table_entry++)
+    {
+        page_directory[table_entry].present_4mb = BIT_OFF;
+        page_directory[table_entry].read_write_4mb = BIT_ON;
+        page_directory[table_entry].user_supervisor_4mb = BIT_OFF;
+        page_directory[table_entry].write_through_4mb = BIT_OFF;
+        page_directory[table_entry].cache_disabled_4mb = BIT_OFF;
+        page_directory[table_entry].accessed_4mb = BIT_OFF;
+        page_directory[table_entry].dirty_4mb = BIT_OFF;
+        page_directory[table_entry].page_size_4mb = BIT_OFF;
+        page_directory[table_entry].global_page_4mb  = BIT_OFF;
+        page_directory[table_entry].available_4mb  = BIT_OFF;
+        page_directory[table_entry].page_table_attribute_index_4mb  = BIT_OFF;
+        page_directory[table_entry].reserved_4mb = BIT_OFF;
+        page_directory[table_entry].page_table_base_addr_4mb = 0;
+    }
+}
+
+
+/*
+add_page_dir_entry
+ * Description:Adds an entry to the page directory specified
+ * Inputs:  page_directory - populate an entry in the specified page directory 
+ *          table_entry - table entry in the Page directory. Range from 0-1023
+ *          ptr_to_page - pointer to page(4kb page) or physical mem(4mb page)
+ *          kb_page - 1 means that page directory entry points to a 4kb page
+ *                    0 means that the page directory entry points to a page table
+ * Outputs: none
+ * Returns: none
+ * Side Effects: sets up an entry in the Page directory table
+ */
+void add_page_dir_entry(page_dir_entry* page_directory,uint8_t table_entry,uint32_t ptr_to_page,uint8_t kb_page,uint32_t user_supervisor)
+{
+    if(kb_page)
+    {
+        page_directory[table_entry].present_4kb = BIT_ON;
+        page_directory[table_entry].read_write_4kb = BIT_ON; 
+        page_directory[table_entry].user_supervisor_4kb = user_supervisor;
+        page_directory[table_entry].write_through_4kb  = BIT_OFF;
+        page_directory[table_entry].cache_disabled_4kb = BIT_OFF;
+        page_directory[table_entry].accessed_4kb = BIT_OFF;
+        page_directory[table_entry].reserved_4kb = BIT_OFF;
+        page_directory[table_entry].page_size_4kb = BIT_OFF;
+        page_directory[table_entry].global_page_4kb = BIT_OFF;
+        page_directory[table_entry].available_4kb = BIT_OFF;
+        page_directory[table_entry].page_table_base_addr_4kb = ptr_to_page;
+    }
+    else
+    {
+        page_directory[table_entry].present_4mb = BIT_ON;
+        page_directory[table_entry].read_write_4mb = BIT_ON;
+        page_directory[table_entry].user_supervisor_4mb = user_supervisor;
+        page_directory[table_entry].write_through_4mb = BIT_OFF;
+        page_directory[table_entry].cache_disabled_4mb = BIT_OFF;
+        page_directory[table_entry].accessed_4mb = BIT_OFF;
+        page_directory[table_entry].dirty_4mb = BIT_OFF;
+        page_directory[table_entry].page_size_4mb = BIT_ON;
+        page_directory[table_entry].global_page_4mb  = BIT_OFF;
+        page_directory[table_entry].available_4mb  = BIT_OFF;
+        page_directory[table_entry].page_table_attribute_index_4mb  = BIT_OFF;
+        page_directory[table_entry].reserved_4mb = BIT_OFF;
+        page_directory[table_entry].page_table_base_addr_4mb = ptr_to_page;
+    }
+}
+
+/*
+setup_page_table
+ * Description: Initializes the page table with by setting the RW bit
+ * Inputs:  page_table - populate an entry in the specified page table
+ * Outputs: none
+ * Returns: none
+ * Side Effects: sets up an entry in the Page table
+ */
+
+void
+setup_page_table(page_table_entry* page_table)
+{
+    uint32_t i;
+    for (i = 0; i < NUM_TABLE_ENTRIES; i++) {
+        page_table[i].present = BIT_OFF;
+        page_table[i].read_write = BIT_ON;
+        page_table[i].user_supervisor = BIT_OFF;
+        page_table[i].write_through = BIT_OFF;
+        page_table[i].cache_disabled = BIT_OFF;
+        page_table[i].accessed = BIT_OFF;
+        page_table[i].dirty = BIT_OFF;
+        page_table[i].page_table_attribute_index = BIT_OFF;
+        page_table[i].global_page = BIT_OFF;
+        page_table[i].available = BIT_OFF;
+        page_table[i].page_table_base_addr = 0;
+    }
+}
+
+
+/*
+add_page_table_entry
+ * Description:Adds an entry to the page table specified
+ * Inputs:  page_table - populate an entry in the specified page table
+ *          table_entry - table entry in the Page table. Range from 0-1023
+ *          ptr_to_page - pointer to a frame in physical mem
+ * Outputs: none
+ * Returns: none
+ * Side Effects: sets up an entry in the specified Page table
+ */
+void add_page_table_entry(page_table_entry* page_table,uint8_t table_entry,uint32_t ptr_to_page,uint32_t user_supervisor)
+{
+        page_table[table_entry].present = BIT_ON;
+        page_table[table_entry].read_write = BIT_ON; 
+        page_table[table_entry].user_supervisor = user_supervisor;
+        page_table[table_entry].write_through  = BIT_OFF;
+        page_table[table_entry].cache_disabled = BIT_OFF;
+        page_table[table_entry].dirty = BIT_OFF;
+        page_table[table_entry].page_table_attribute_index = BIT_OFF;
+        page_table[table_entry].global_page = BIT_OFF;
+        page_table[table_entry].available = BIT_OFF;
+        page_table[table_entry].page_table_base_addr = ptr_to_page;
+}

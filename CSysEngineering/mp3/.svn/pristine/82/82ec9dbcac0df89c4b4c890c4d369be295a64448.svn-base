@@ -1,0 +1,69 @@
+#include "x86_desc.h"
+#include "lib.h"
+#include "page.h"
+
+extern uint32_t * page_tab_kb;
+extern uint32_t * page_tab_mb;
+extern uint32_t * page_dir;
+
+void
+init_page_dir()
+{
+    page_dir[0] = ((uint32_t) & page_tab_kb)<<12;
+    page_dir[1] = (FOUR_MEGA)<<12;
+}
+
+
+/*
+ PAGE TABLE/[Directory] ENTRY:
+ 31                 12      9   8     7   6   5     4     3     2     1   0
+| Page Base Address | Avail | G | PAT | D | A | PCD | PWT | U/S | R/W | P |
+
+ [in Directory]
+ 
+ Avail  =   Available for system programmers use
+ G      =   Globabl Page [Ignored]
+ PAT    =   Page Table Attribute Index [Page Size (0 indicates 4 kb)]
+ D      =   Dirty [Reserved as 0]
+ A      =   Accessed
+ PCD    =   Cache Disabled
+ PWT    =   Write-Through
+ U/S    =   User/Supervisor
+ R/W    =   Read/Write
+ P      =   Present
+ 
+ */
+
+void
+init_page_tab(uint32_t start_addr, uint32_t num)
+{
+    int i;
+    for (i = 0; i < num; i++) {
+        page_tab_kb[i] |= (i*FOUR_KILO + start_addr)<<12;
+    }
+}
+
+
+void
+init_pages()
+{
+    uint32_t temp;
+    //set up page table
+    init_page_tab(0, NUM_KB_PAGE);
+    //set up page directory
+    init_page_dir();
+    
+    page_dir[0] |= MASK_AVALABLE;
+    page_dir[1] |= MASK_MB;
+    //enable paging
+    asm volatile ("movl %%cr0, %0\n":"=S"(temp));
+    temp = temp | ENABLE_MASK;
+    asm volatile ("movl %0, %%cr0" : : "S"(temp));
+
+    asm volatile ("movl %%cr4, %0\n":"=S"(temp));
+    temp = temp | FOUR_MD;
+    asm volatile ("movl %0, %%cr4" : : "S"(temp));
+    //cr3 set to page_dir
+    asm volatile ("movl %0, %%cr3" : : "S"(page_dir));
+}
+

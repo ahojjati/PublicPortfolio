@@ -1,0 +1,12 @@
+rtfreed2 total : 100/100
+Testing task1	35/35	
+	passed	
+Testing task2	35/35	
+	passed
+	
+Testing task3	30/30	
+	ip address  : passed
+	mac address : passed
+	domain name : passed	
+Testing task4(bonus)	0/10	
+	no submission	

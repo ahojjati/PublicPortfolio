@@ -1,0 +1,56 @@
+/*idt_handlers.h - all of the interrupt handler functions
+*/
+
+#ifndef _IDT_HANDLERS_H
+#define _IDT_HANDLERS_H
+
+#include "x86_desc.h"
+#include "system_call.h"
+
+#ifndef ASM
+
+extern void divide_error_c();
+extern void debug_c();
+extern void nmi_c();
+extern void int3_c();
+extern void overflow_c();
+extern void bounds_c();
+extern void invalid_op_c();
+extern void device_not_available_c();
+extern void doublefault_fn_c();
+extern void coprocessor_segment_overrun_c();
+extern void invalid_TSS_c();
+extern void segment_not_present_c();
+extern void stack_segment_c();
+extern void general_protection_c();
+extern void page_fault_c();
+extern void floating_point_c();
+extern void alignment_check_c();
+extern void machine_check_c();
+extern void simd_coprocessor_error_c();
+
+//Pic master irq line interrus
+extern void master_irq0_c();
+extern void keyboard_handler_c();
+extern void master_irq2_c();
+extern void master_irq3_c();
+extern void master_irq4_c();
+extern void master_irq5_c();
+extern void master_irq6_c();
+extern void master_irq7_c();
+
+//Pic slave irq line interrus
+extern void rtc_handler_c();
+extern void slave_irq1_c();
+extern void slave_irq2_c();
+extern void slave_irq3_c();
+extern void slave_irq4_c();
+extern void slave_irq5_c();
+extern void slave_irq6_c();
+extern void slave_irq7_c();
+
+extern void system_call_c();
+
+#endif
+#endif /* _IDT_HANDLERS_H */
+

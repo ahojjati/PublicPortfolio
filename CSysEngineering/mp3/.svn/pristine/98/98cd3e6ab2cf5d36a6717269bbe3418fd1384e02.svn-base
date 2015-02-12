@@ -1,0 +1,21 @@
+#ifndef _PAGE_H
+#define _PAGE_H
+
+#define ENABLE_MASK        		0x80000000
+#define NUM_KB_PAGES           	1024
+#define NUM_MB_PAGES			1
+#define NUM_PAGES 				NUM_KB_PAGES + NUM_MB_PAGES
+#define FOUR_KILO				4*1024
+#define FOUR_MEGA				1024*FOUR_KILO
+#define FOUR_MD					0x00000010
+#define MASK_AVAILABLE          0x17
+#define MASK_MB                 0x97
+
+
+void init_pages();
+void init_page_dir();
+void init_page_tab(uint32_t, uint32_t);
+
+
+#endif
+

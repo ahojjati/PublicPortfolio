@@ -1,0 +1,7 @@
+#ifndef _SYSTEM_CALL_H
+#define _SYSTEM_CALL_H
+
+//System calls
+extern void system_call_c();
+
+#endif /*_SYSTEM_CALL_H*/

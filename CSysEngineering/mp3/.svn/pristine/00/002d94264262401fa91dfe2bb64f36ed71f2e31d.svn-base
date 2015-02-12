@@ -1,0 +1,436 @@
+//contains the handler for the keyboard
+//possibly an initialization function 
+// anything keyboard related
+
+#include "keyboard.h"
+#include "types.h"
+#include "i8259.h"
+#include "lib.h"
+#include "terminal.h"
+
+static int shift_cntl;			// flag to determine if shift has been pressed
+static uint8_t keypress;
+static int cntl_flag = 0;       //flag to determine if control has been pressed
+static int caps_lock_flag = 0;  //flag to determine if caps lock has been pressed
+/* 
+ * keyboard_init
+ * Description: Enables IRQ1 on the master PIC so interrupts can be sent
+ * and keyboard characters can be read
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: opens IRQ1 on master PIC
+ */
+void keyboard_init()
+{
+	enable_irq(KEYBOARD_IRQ);
+}
+
+/*
+ * keyboard_idt
+ * Description:	scans port 0x60 to read the new scancode that may have come in
+ * Inputs: none
+ * Outputs: none
+ * Returns:	none
+ * Side Effects: sets appropriate flags and may call the keypress handler, which may
+ * then ouput a character on screen.
+ */
+ 
+void keyboard_handler_c()
+{
+	uint8_t input = inb(KEYBOARD_PORT);
+
+	switch(input) {
+		case LEFT_SHIFT:
+			shift_cntl = 1;
+			break;
+		case RIGHT_SHIFT:
+			shift_cntl = 1;
+			break;
+		case LEFT_SHIFT_R:
+			shift_cntl = 0;
+			break;
+		case RIGHT_SHIFT_R:
+			shift_cntl = 0;
+			break;
+		case CTRL:
+			cntl_flag = 1;
+			break;
+		case CTRL_R:
+			cntl_flag = 0;
+			break;
+		case L_PRESSED:
+			//Check for CNTL-L combination
+			if(cntl_flag)
+				clear_screen(1);
+			else
+				key_press_read(input);
+			break;
+		case CAPS_LOCK:
+			if(!caps_lock_flag)
+				caps_lock_flag = 1;
+			else
+				caps_lock_flag = 0;
+			break;
+		case ENTER:
+			create_newline(1);
+			//Make sure to add the newline character to the line buf!
+			line_buffer_add('\n');
+			break;
+		case BACKSPACE:
+			//Delete the character on the console and in the line buf
+			delete_character();
+			line_buffer_delete();
+			break;
+		case ALT:
+			break;
+		case ALT_R:
+			break;
+		/****The following case is only for development.  It should
+		 ****eventually be removed.  */
+		case F1_PRESS:
+			terminal_read_test();
+			break;
+		/****The following case is only for development.  It should
+		 ****eventually be removed.  */
+		case F2_PRESS:
+			terminal_write_test();
+			break;
+		default:					// ascii character should be displayed
+			key_press_read(input);
+			break;
+	}
+	send_eoi(KEYBOARD_IRQ);
+}
+
+/*
+ * key_press_read(uint8_t input)
+ * Description: receives a scancode from the handler that wasn't a control press and
+ * outputs the appropriate character on the terminal
+ * Inputs: input - scancode that was read from the port
+ * Outputs: displays character on screen
+ * Returns:	none
+ * Side Effects: none
+ * NOTE: keyboard scancodes found at:
+ * courses.engr.illinois.edu/ece390/books/labmanual/io-devices.html#IO-DEVICES-KEYBOARD
+ */
+void key_press_read(uint8_t input)
+{
+	int release_flag = 0;
+	if (shift_cntl || caps_lock_flag)		// switch case for if shift was/is pressed
+	{
+		switch(input)
+		{
+			case 0x1E: 
+				keypress = 'A';
+				break;
+			case 0x30: 
+				keypress = 'B';
+				break;
+	 		case 0x2E: 
+				keypress = 'C';
+				break;
+			case 0x20: 
+				keypress = 'D';
+				break;
+			case 0x12: 
+				keypress = 'E';
+				break;
+			case 0x21: 
+				keypress = 'F';
+				break;
+			case 0x22: 
+				keypress = 'G';
+				break;
+			case 0x23: 
+				keypress = 'H';
+				break;
+			case 0x17: 
+				keypress = 'I';
+				break;
+			case 0x24: 
+				keypress = 'J';
+				break;
+			case 0x25: 
+				keypress = 'K';
+				break;
+			case 0x26: 
+				keypress = 'L';
+				break;
+			case 0x32: 
+				keypress = 'M';
+				break;
+			case 0x31: 
+				keypress = 'N';
+				break;
+			case 0x18: 
+				keypress = 'O';
+				break;
+			case 0x19: 
+				keypress = 'P';
+				break;
+			case 0x10: 
+				keypress = 'Q';
+				break;
+			case 0x13: 
+				keypress = 'R';
+				break;
+			case 0x1F: 
+				keypress = 'S';
+				break;
+			case 0x14: 
+				keypress = 'T';
+				break;
+			case 0x16: 
+				keypress = 'U';
+				break;
+			case 0x2F: 
+				keypress = 'V';
+				break;
+			case 0x11: 
+				keypress = 'W';
+				break;
+			case 0x2D: 
+				keypress = 'X';
+				break;
+			case 0x15: 
+				keypress = 'Y';
+				break;
+			case 0x2C: 
+				keypress = 'Z';
+				break;
+			case 0x39:
+				keypress = ' ';
+				break;
+			case 0x02:
+				keypress = '!'; 
+				break;
+			case 0x03: 
+				keypress = '@'; 
+				break;
+			case 0x04: 
+				keypress = '#'; 
+				break;
+			case 0x05: 
+				keypress = '$'; 
+				break;
+			case 0x06: 
+				keypress = '%';
+				break;
+			case 0x07: 
+				keypress = '^'; 
+				break;
+			case 0x08: 
+				keypress = '&'; 
+				break;
+			case 0x09: 
+				keypress = '*'; 
+				break;
+			case 0x0A: 
+				keypress = '('; 
+				break;
+			case 0x0B: 
+				keypress = ')'; 
+				break;
+			case 0x0C: 
+				keypress = '_'; 
+				break;
+			case 0x0D: 
+				keypress = '+'; 
+				break;
+			case 0x33: 
+				keypress = '<'; 
+				break;
+			case 0x34: 
+				keypress = '>'; 
+				break;
+			case 0x35: 
+				keypress = '?';
+				break;
+			case 0x27: 
+				keypress = ':'; 
+				break;
+			case 0x28: 
+				keypress = '"'; 
+				break;
+			case 0x1A: 
+				keypress = '{'; 
+				break;
+			case 0x1B: 
+				keypress = '}'; 
+				break;
+			case 0x2B: 
+				keypress = '|'; 
+				break;
+			case 0x29: 
+				keypress = '~'; 
+			default:
+				//This case handles general release scan codes
+				release_flag = 1;
+				break;
+
+		}
+
+	}
+	else
+	{
+		switch(input)						// switch case for when shift isn't pressed
+		{
+			case 0x1E: 
+				keypress = 'a';
+				break;
+			case 0x30: 
+				keypress = 'b';
+				break;
+	 		case 0x2E: 
+				keypress = 'c';
+				break;
+			case 0x20: 
+				keypress = 'd';
+				break;
+			case 0x12: 
+				keypress = 'e';
+				break;
+			case 0x21: 
+				keypress = 'f';
+				break;
+			case 0x22: 
+				keypress = 'g';
+				break;
+			case 0x23: 
+				keypress = 'h';
+				break;
+			case 0x17: 
+				keypress = 'i';
+				break;
+			case 0x24: 
+				keypress = 'j';
+				break;
+			case 0x25: 
+				keypress = 'k';
+				break;
+			case 0x26: 
+				keypress = 'l';
+				break;
+			case 0x32: 
+				keypress = 'm';
+				break;
+			case 0x31: 
+				keypress = 'n';
+				break;
+			case 0x18: 
+				keypress = 'o';
+				break;
+			case 0x19: 
+				keypress = 'p';
+				break;
+			case 0x10: 
+				keypress = 'q';
+				break;
+			case 0x13: 
+				keypress = 'r';
+				break;
+			case 0x1F: 
+				keypress = 's';
+				break;
+			case 0x14: 
+				keypress = 't';
+				break;
+			case 0x16: 
+				keypress = 'u';
+				break;
+			case 0x2F: 
+				keypress = 'v';
+				break;
+			case 0x11: 
+				keypress = 'w';
+				break;
+			case 0x2D: 
+				keypress = 'x';
+				break;
+			case 0x15: 
+				keypress = 'y';
+				break;
+			case 0x2C: 
+				keypress = 'z';
+				break;
+			case 0x39:
+				keypress = ' ';
+				break;
+			case 0x02:
+				keypress = '1'; 
+				break;
+			case 0x03: 
+				keypress = '2'; 
+				break;
+			case 0x04: 
+				keypress = '3'; 
+				break;
+			case 0x05: 
+				keypress = '4'; 
+				break;
+			case 0x06: 
+				keypress = '5';
+				break;
+			case 0x07: 
+				keypress = '6'; 
+				break;
+			case 0x08: 
+				keypress = '7'; 
+				break;
+			case 0x09: 
+				keypress = '8'; 
+				break;
+			case 0x0A: 
+				keypress = '9'; 
+				break;
+			case 0x0B: 
+				keypress = '0'; 
+				break;
+			case 0x0C: 
+				keypress = '-'; 
+				break;
+			case 0x0D: 
+				keypress = '='; 
+				break;
+			case 0x33: 
+				keypress = ','; 
+				break;
+			case 0x34: 
+				keypress = '.'; 
+				break;
+			case 0x35: 
+				keypress = '/';
+				break;
+			case 0x27: 
+				keypress = ';'; 
+				break;
+			case 0x28: 
+				keypress = '\'';
+				break;
+			case 0x1A: 
+				keypress = '['; 
+				break;
+			case 0x1B: 
+				keypress = ']'; 
+				break;
+			case 0x2B: 
+				keypress = '\\'; 
+				break;
+			case 0x29: 
+				keypress = '`'; 
+				break;
+			default:
+				//This case handles general release scan codes
+				release_flag = 1;
+				break;
+		}
+	}
+
+	//if appropriate, echo to screen and write to line buffer
+	if((!release_flag) && (!write_lock))
+	{
+		putc(keypress);
+		line_buffer_add(keypress);
+	}
+}

@@ -1,0 +1,266 @@
+//system_call.c where all the system calls are handled
+
+#include "types.h"
+#include "system_call.h"
+#include "lib.h"
+#include "x86_desc.h"
+#include "file_sys.h"
+
+
+static int32_t old_ebp;
+static int32_t old_esp;
+static int32_t old_eip;
+
+static f_ops_t terminal_ops;
+static f_ops_t rtc_ops;
+static f_ops_t fs_ops;
+static f_ops_t fd_ops;
+
+extern pcb_t pcb_arr[2];
+
+static int32_t old_ebp;
+static int32_t old_esp;
+static int32_t old_eip;
+
+/* 
+ * _halt
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _halt (uint8_t status)
+{
+	return 0;
+}
+
+void init_file_ops()
+{
+	//initialize the file_ops
+	rtc_ops.open  = rtc_open;
+	rtc_ops.close = rtc_close;
+	rtc_ops.read  = rtc_read;
+	rtc_ops.write = rtc_write;
+	terminal_ops.open  = terminal_open;
+	terminal_ops.close = terminal_close;
+	terminal_ops.read  = terminal_read;
+	terminal_ops.write = terminal_write;
+	fs_ops.open  = fs_open;
+	fs_ops.close = fs_close;
+	fs_ops.read  = fs_read;
+	fs_ops.write = fs_write;
+	fd_ops.open  = fs_dir_open;
+	fd_ops.close = fs_dir_close;
+	fd_ops.read  = fs_dir_read;
+	fd_ops.write = fs_dir_write;
+}
+
+uint32_t init_pcb()
+{
+	uint8_t pcb_num;
+	uint32_t i;
+	for( i = 0 ; i < 2 ; i ++ )
+	{
+		if (!pcb_arr[i].occupado)
+		{
+				pcb_num = i;
+				pcb_arr[i].occupado = 1;
+				break;
+		}
+		if (i == 1)
+			return -1;
+	}
+	((pcb_arr[pcb_num]).fd[0]).offs = 0;
+	((pcb_arr[pcb_num]).fd[0]).flags = 1;
+	((pcb_arr[pcb_num]).fd[0]).fops = & terminal_ops;
+	((pcb_arr[pcb_num]).fd[0]).inode = NULL;
+	((pcb_arr[pcb_num]).fd[1]).offs = 0;
+	((pcb_arr[pcb_num]).fd[1]).flags = 1;
+	((pcb_arr[pcb_num]).fd[1]).fops = & terminal_ops;
+	((pcb_arr[pcb_num]).fd[1]).inode = NULL;
+	return pcb_num;
+}
+
+/* 
+ * _execute
+ * Description: attemps to load and execute a new program, handing off processor to new program until it terminates
+ * Inputs: command - string of words separated by spaces
+ * 						- first word is name of executable
+ *						- rest of words w/o spaces are arguments to be passed in on call from _getargs
+ * Outputs: none
+ * Returns: -1 - command can't be executed
+ *			256 - exception occurs
+ *			0-255 - program executes a _halt system call and returns whatever is passed into _halt
+ * Side Effects: hands off processor to new process
+ */
+int32_t _execute (const uint8_t* command)
+{
+	uint8_t xfile_name[BUFF_SIZE], argument[BUFF_SIZE], file_header[FILE_HEADER_SIZE];
+	uint32_t i = 0, j = 0, e_entry = 0, iterator, check;
+	dentry_t new_dentry;
+	//pcb_t new_process;
+
+/* parse through command to get file name and arguments in appropriate forms */
+
+	/* get the name of the possible executable file */
+	while(command[i] != ' ' && command[i] != '\0')
+	{
+		xfile_name[i] = command[i];
+		i++;
+	}
+	xfile_name[i] = '\0';
+	
+	/* put arguments into appropriate form in case call from _getargs occurs */
+	while(command[i] != '\0')
+	{
+		if (command[i] != ' ')
+		{
+			argument[j] = command[i];
+			j++;
+			i++;
+		}
+		else
+		{
+			i++;
+		}
+	}
+	argument[j] = '\0';
+
+/* check to see whether an executable file */
+
+	/* check to see if file exists */
+	if (read_dentry_by_name(xfile_name, &new_dentry) == -1)
+		return -1;
+	/* check to see if the copied dentry values contains a valid inode_num */
+    if (read_data(new_dentry.inode_num, 0, file_header, FILE_HEADER_SIZE) == -1)
+    	return -1;
+    /* check to see if the file is an executable; first 4 bytes should read 0x7F, E, L, F */
+    if (!(file_header[0] == 0x7F && file_header[1] == 'E' && file_header[2] == 'L' && file_header[3] == 'F'))
+    	return -1;
+
+/* start the new process */
+
+    /* not enough space in the pcb array */
+    check = init_pcb();
+    if (check == -1)
+    {
+    	return -1;
+    }
+    else
+    {
+    	pcb_arr[check].PID = check;
+    }
+
+    /* grab the memory address from file header of the entry point of where the process starts executing */
+    for (iterator = START_ADDR_OFFSET; iterator >= 0; iterator--)
+    {
+    	e_entry += file_header[iterator + PROCESS_START_ADDR];
+    	if (iterator == 0)
+    		break;
+    	e_entry = e_entry << BYTE;
+    }
+
+/* In line assembly to save old register values */
+
+    /* save ebp register */
+    asm volatile ("movl %%ebp, %0" : "=a"(old_ebp) : :"memory", "cc");
+
+	return -1;
+}
+/* 
+ * _read
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _read (int32_t fd,void* buf,int32_t nbytes)
+{
+return 0;
+}
+/* 
+ * _write
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes)
+{
+return 0;
+}
+/* 
+ * _open
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _open (const uint8_t* filename)
+{
+return 0;
+}
+/* 
+ * _close
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _close (int32_t fd)
+{
+return 0;
+}
+/* 
+ * _getargs
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _getargs (uint8_t* buf, uint32_t nbytes)
+{
+return 0;
+}
+/* 
+ * _vidmap
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _vidmap (uint8_t** screen_start)
+{
+return 0;
+}
+/* 
+ * _set_handler
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _set_handler (int32_t signum, void* handler_address)
+{
+return 0;
+}
+/* 
+ * _sigreturn
+ * Description: 
+ * Inputs:
+ * Outputs: 
+ * Returns: 
+ * Side Effects: 
+ */
+int32_t _sigreturn (void)	
+{
+	return 0;
+}

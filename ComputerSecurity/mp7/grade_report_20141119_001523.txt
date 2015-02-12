@@ -1,0 +1,11 @@
+rtfreed2 total : 24/100
+Testing task1	12/50	
+	overflow : failed
+	symbols : failed
+	alphanumeric : passed
+	formatted string : failed	
+Testing task2	12/50	
+	normal input : passed
+	symbol : failed
+	lower case : failed
+	number : failed	

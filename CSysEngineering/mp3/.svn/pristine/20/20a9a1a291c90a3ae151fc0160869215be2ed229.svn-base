@@ -1,0 +1,21 @@
+#ifndef _SCHED_H
+#define _SCHED_H
+
+#include "types.h"
+#include "lib.h"
+#include "pcb_struct.h"
+#include "system_call.h"
+#include "page.h"
+#include "i8259.h"
+
+#define QUEUE_SIZE 3
+
+#ifndef ASM
+
+
+void init_sched();
+
+void sched();
+
+#endif
+#endif

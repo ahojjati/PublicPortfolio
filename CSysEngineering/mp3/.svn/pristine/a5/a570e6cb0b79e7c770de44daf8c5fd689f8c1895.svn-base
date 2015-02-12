@@ -1,0 +1,146 @@
+/* init_idt.c - Set up the idt table with the correct entries.  
+The entries consist of interupt Gates that hold the pointers to 
+the interrupt, exception , and system call handlers.
+*/
+
+
+#include "init_idt.h"
+#include "int_handlers.h" 
+#include "x86_desc.h"
+#include "keyboard.h"
+#include "rtc.h"
+#include "page.h"
+
+/*
+ * init_idt
+ * Description: Initializes the idt table with the correct interrupt gate information.  This allows handling of the interrupts
+ * Inputs: none
+ * Outputs: none
+ * Returns: none
+ * Side Effects: populates IDT to allow interrupt handling
+ */
+void init_idt()
+{	
+
+//Set up the intel define exceptions and interrupts
+	 setup_intel_interrupts(0, &divide_error);
+	 setup_intel_interrupts(1, &debug);
+	 setup_intel_interrupts(2, &nmi);
+	 setup_intel_interrupts(3, &int3);
+	 setup_intel_interrupts(4, &overflow);
+	 setup_intel_interrupts(5, &bounds);
+	 setup_intel_interrupts(6, &invalid_op);
+	 setup_intel_interrupts(7, &device_not_available);
+	 setup_intel_interrupts(8, &doublefault_fn);
+	 setup_intel_interrupts(9, &coprocessor_segment_overrun);
+	 setup_intel_interrupts(10,&invalid_TSS);
+	 setup_intel_interrupts(11,&segment_not_present);
+	 setup_intel_interrupts(12,&stack_segment);
+	 setup_intel_interrupts(13,&general_protection);
+	 setup_intel_interrupts(14,&page_fault);
+	 setup_intel_interrupts(16,&floating_point);
+	 setup_intel_interrupts(17,&alignment_check);
+	 setup_intel_interrupts(18,&machine_check);
+	 setup_intel_interrupts(19,&simd_coprocessor_error);
+
+//Set up master idt table
+	 setup_irq_interrupts(32,&master_irq0);
+	 setup_irq_interrupts(33,&keyboard_handler);
+	 setup_irq_interrupts(34,&master_irq2);
+	 setup_irq_interrupts(35,&master_irq3);
+	 setup_irq_interrupts(36,&master_irq4);
+	 setup_irq_interrupts(37,&master_irq5);
+	 setup_irq_interrupts(38,&master_irq6);
+	 setup_irq_interrupts(39,&master_irq7);
+
+//Set up slave idt table
+	 setup_irq_interrupts(40,&rtc_handler);
+	 setup_irq_interrupts(41,&slave_irq1);
+	 setup_irq_interrupts(42,&slave_irq2);
+	 setup_irq_interrupts(43,&slave_irq3);
+	 setup_irq_interrupts(44,&slave_irq4);
+	 setup_irq_interrupts(45,&slave_irq5);
+	 setup_irq_interrupts(46,&slave_irq6);
+	 setup_irq_interrupts(47,&slave_irq7);
+
+//Set up system calls in idt table
+	 setup_system_calls(128,&system_call);
+}
+
+
+/*
+ * setup_intel_interrupts(uint8_t vector, uint32_t handler)
+ * Description: Setup intel interrupts function which is used to update the idt table 
+ *				with the correct gate values. Interrupts can only be handled by the kernel therefore DPL_KERNEL
+ * Inputs: vector -	The vector number that is associated with the interrupt descriptor table
+ *		   handler - A function pointer to the interrupt handler code
+ * Outputs:none
+ * Returns:none
+ * Side Effects:Create a interrupt gate and populate the idt table which is used to point to the correct interrupt handler
+ */
+void setup_intel_interrupts(uint8_t vector, uint32_t* handler)
+{
+	//Setting up 0xXXXX8E000010XXXX
+	idt[vector].seg_selector = KERNEL_CS;
+	idt[vector].reserved4 = BIT_OFF;
+	idt[vector].reserved3 = BIT_OFF;
+	idt[vector].reserved2 = BIT_ON;	
+	idt[vector].reserved1 = BIT_ON;
+	idt[vector].size = BIT_ON;
+	idt[vector].reserved0 = BIT_OFF;
+	idt[vector].dpl = DPL_KERNEL;
+	idt[vector].present = BIT_ON;
+	SET_IDT_ENTRY(idt[vector],handler);
+}
+
+
+/*
+ * setup_irq_interrupts(uint8_t vector, uint32_t handler)
+  Description: Setup irq interrupts function which is used to update the idt table 
+ *				with the correct gate values. Interrupts can only be handled by the kernel therefore DPL_KERNEL
+ * Inputs: vector -	The vector number that is associated with the interrupt descriptor table
+ *		   handler - A function pointer to the interrupt handler code
+  * Outputs:none
+ * Returns:none
+ * Side Effects:Create a interrupt gate and populate the idt table which is used to point to the correct interrupt handler
+ */
+void setup_irq_interrupts(uint8_t vector, uint32_t* handler)
+{
+	//Setting up 0xXXXX8E000010XXXX
+	idt[vector].seg_selector = KERNEL_CS;
+	idt[vector].reserved4 = RESERVED;
+	idt[vector].reserved3 = BIT_OFF;
+	idt[vector].reserved2 = BIT_ON;
+	idt[vector].reserved1 = BIT_ON;
+	idt[vector].size = BIT_ON;
+	idt[vector].reserved0 = BIT_OFF;
+	idt[vector].dpl = DPL_KERNEL;
+	idt[vector].present = BIT_ON;
+	SET_IDT_ENTRY(idt[vector],handler);
+}
+
+
+/*
+ * setup_system_calls(uint8_t vector, uint32_t handler)
+ * Description: Setup system calls function which is used to update the idt table 
+ *				with the correct gate values.  User code are allowed to make system calls so DPL_USER allows 
+ * Inputs: vector -	The vector number that is associated with the interrupt descriptor table
+ *		   handler - A function pointer to the interrupt handler code
+ * Outputs:none
+ * Returns:none
+ * Side Effects:Create a system gate and populate the idt table which is used to point to the correct interrupt handler
+ */
+void setup_system_calls(uint8_t vector, uint32_t* handler)
+{
+	//Setting up 0x XXXX EF00 0010 XXXX
+	idt[vector].seg_selector = KERNEL_CS; //<-- might be an issue
+	idt[vector].reserved4 = RESERVED;
+	idt[vector].reserved3 = BIT_ON;
+	idt[vector].reserved2 = BIT_ON;	
+	idt[vector].reserved1 = BIT_ON;
+	idt[vector].size = BIT_ON;
+	idt[vector].reserved0 = BIT_OFF;
+	idt[vector].dpl = DPL_USER;
+	idt[vector].present = BIT_ON;
+	SET_IDT_ENTRY(idt[vector],handler);
+}

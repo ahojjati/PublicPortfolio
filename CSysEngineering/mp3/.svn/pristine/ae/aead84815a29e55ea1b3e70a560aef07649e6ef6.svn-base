@@ -1,0 +1,17 @@
+//system_call.c where all the system calls are handled
+
+#include "system_call.h"
+#include "lib.h"
+
+/* Exception handler for System call
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO:
+ */
+void system_call_c()
+{
+	clear();
+	printf("system call has been called!");
+	return;
+}
+

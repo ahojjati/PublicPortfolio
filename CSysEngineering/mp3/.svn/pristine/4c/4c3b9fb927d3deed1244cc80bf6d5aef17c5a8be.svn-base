@@ -1,0 +1,122 @@
+#include "x86_desc.h"
+#include "lib.h"
+#include "page.h"
+
+//NOTE: that this file will have to be pretty much entirely re-written
+//for paging arbitrarily
+
+
+//values defined in x86_desc.S
+//page table and page directory
+extern uint32_t * page_tab_kb;
+extern uint32_t * page_dir;
+
+
+/*
+ PAGE Directory ENTRY (4MB):
+ 31                 22         13    12       9   8    7   6   5     4     3     2     1   0
+ | Page Base Address | Reserved | PAT | Avail | G | PS | D | A | PCD | PWT | U/S | R/W | P |
+ 
+ [in Directory]
+ 
+ Avail  =   Available for system programmers use
+ G      =   Globabl Page [Ignored]
+ PS     =   Page Size (0 indicates 4 kb) - 1
+ D      =   Dirty [Reserved as 0]
+ A      =   Accessed
+ PCD    =   Cache Disabled - 1
+ PWT    =   Write-Through
+ U/S    =   User/Supervisor - 1
+ R/W    =   Read/Write - 1
+ P      =   Present - 1
+ 
+ */
+
+//initialize the page directory
+//no args
+//no ret
+void
+init_page_dir()
+{
+    //1024 x 4kB pages stored in page_tab_kb
+    page_dir[0] = ((uint32_t) & page_tab_kb)<<12;
+    //1 x 4mb page stored in page_dir[1]
+    page_dir[1] = (FOUR_MEGA)<<22;
+}
+
+
+/*
+ PAGE TABLE/[Directory] ENTRY (4kB):
+ 31                 12      9   8     7   6   5     4     3     2     1   0
+| Page Base Address | Avail | G | PAT | D | A | PCD | PWT | U/S | R/W | P |
+
+ [in Directory]
+ 
+ Avail  =   Available for system programmers use
+ G      =   Globabl Page [Ignored]
+ PAT    =   Page Table Attribute Index - 0
+ D      =   Dirty [Reserved as 0]
+ A      =   Accessed
+ PCD    =   Cache Disabled - 1 (?)
+ PWT    =   Write-Through
+ U/S    =   User/Supervisor - 1
+ R/W    =   Read/Write - 1
+ P      =   Present - 1
+ 
+ */
+
+//initializes page table
+//no args
+//no ret
+void
+init_page_tab(uint32_t start_addr, uint32_t num)
+{
+    int i;
+    //for num pages in memory (one after another) make num 4kb pages
+    //starting at start_addr
+    for (i = 0; i < num; i++) {
+        page_tab_kb[i] |= (i*FOUR_KILO + start_addr)<<12;
+    }
+}
+
+//initialize paging
+//no arguments
+//no return value
+//initializes paging
+void
+init_pages()
+{
+    uint32_t temp;
+    //set up page table
+    init_page_tab(0, NUM_KB_PAGES);
+    //set up page directory
+    init_page_dir();
+    
+    //make the 1024 x 4kb pages available for use
+    page_dir[0] |= MASK_AVAILABLE;
+    //make the kernel page available for use
+    page_dir[1] |= MASK_MB;
+    
+    //WE OVER-WRITE ESI HERE, IF YOU DON'T WANT ESI DESTROYED
+    //THAT SUCKS
+    
+    //enable paging
+    asm volatile ("movl %%cr0, %0\n":"=S"(temp));
+    temp = temp | ENABLE_MASK;
+    asm volatile ("movl %0, %%cr0" : : "S"(temp));
+
+    //note to self:
+    //now I thought that maybe we were having issues with paging
+    //because we were writing to the kernel before creating pages
+    //no, paging isn't enabled then.
+    
+
+    //make it so that the page directory is 4mb pages
+    asm volatile ("movl %%cr4, %0\n":"=S"(temp));
+    temp = temp | FOUR_MD;
+    asm volatile ("movl %0, %%cr4" : : "S"(temp));
+
+    //cr3 set to page_dir
+    asm volatile ("movl %0, %%cr3" : : "S"(page_dir));
+}
+

@@ -1,0 +1,17 @@
+rtfreed2 total : 70/100
+Testing task1	35/35	
+	passed	
+Testing task2	35/35	
+	passed
+	
+Testing task3	0/30	ValueError running code:submitted 172.16.165.165F0:19:AF:02:9B:F1WWW.CINIHOLLAND.NL./
+expected  172.16.165.165
+10	
+	ip address  : passed
+	mac address : failed
+	domain name : failed['']
+	ip address  : passed
+	mac address : failed
+	domain name : failed	
+Testing task4(bonus)	0/10	
+	no submission	

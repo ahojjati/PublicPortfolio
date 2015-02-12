@@ -1,0 +1,49 @@
+/*idt_handlers.h - all of the interrupt handler functions
+*/
+
+#ifndef _IDT_HANDLERS_H
+#define _IDT_HANDLERS_H
+
+void divide_error();
+void debug();
+void nmi();
+void int3();
+void overflow();
+void bounds();
+void invalid_op();
+void device_not_available();
+void doublefault_fn();
+void coprocessor_segment_overrun();
+void invalid_TSS();
+void segment_not_present();
+void stack_segment();
+void general_protection();
+void page_fault();
+void floating_point();
+void alignment_check();
+void machine_check();
+void simd_coprocessor_error();
+
+
+void master_irq0();
+void keyboard(); 		//master_irq0()
+void master_irq2();
+void master_irq3();
+void master_irq4();
+void master_irq5();
+void master_irq6();
+void master_irq7();
+
+void rtc();			  // slave_irq0()
+void slave_irq1();
+void slave_irq2();
+void slave_irq3();
+void slave_irq4();
+void slave_irq5();
+void slave_irq6();
+void slave_irq7();
+
+void system_call();
+
+
+#endif /* _IDT_HANDLERS_H */

@@ -1,0 +1,8 @@
+rtfreed2 total : 0/100
+Testing task1	0/20	ValueError running code:['Traceback (most recent call last):', '  File "/Users/Q7X6/fa14-cs461/_class/_private/Autograder/mp2/grade_task1.py", line 36, in <module>', '    student_end = int(data, 16)', "ValueError: invalid literal for int() with base 16: ''", '']
+Testing task2	0/25	ValueError running code:['Traceback (most recent call last):', '  File "/Users/Q7X6/fa14-cs461/_class/_private/Autograder/mp2/grade_task2.py", line 46, in <module>', '    if(int(data) == count ):', "ValueError: invalid literal for int() with base 10: ''", '']
+Testing task3	0/25	
+	*Failed*	
+Testing task4	0/30	
+	*Failed*	
+Testing task5(bonus)	0/10	You did not find the correct input string.	

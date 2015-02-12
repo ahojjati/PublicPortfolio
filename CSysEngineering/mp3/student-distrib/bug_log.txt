@@ -1,0 +1,127 @@
+------------------------------------------------------------3.1------------------------------------------------------------
+PAGING:
+BUG: null is dereferencable
+FIX: turn off first 4 kb page in page table
+/***RTC BUGS***/
+BUG: failed to receive more than one interrupt from RTC
+FIX: send an eoi now when the RTC sends an interrupt to reenable
+KEYBOARD:
+BUG:
+FIX:
+HANDLERS:
+BUG:
+FIX:
+
+
+
+------------------------------------------------------------3.2------------------------------------------------------------
+
+/***RTC BUGS***/ 
+BUG: write was misinterpreted, where passed in buffer pointer value was interpreted as the divisor of the frequency rather than a frequency itself
+FIX: interpret as frequency and bit shift appropriately to get proper frequency
+BUG: RTC open and close were written incorrectly (took arguments)
+FIX: rewrote RTC open and close so that they took no parameters
+------------------------------------------------------------3.3------------------------------------------------------------
+
+/***File System/File Loader BUGS***/
+BUG: read_data function was incorrectly grabbing and copying over contiguous data blocks rather than what was specified by the index_node data block indices due to some errant if/else conditions set up
+FIX: simplified/rewrote read_data so that the errant condition was no longer hit and copying over contiguous/incorrect data blocks
+BUG: system call open() wasn’t actually calling the appropriate open() call for the new file/device/directory that had been opened, leading to executable calls such as cat rtc not acting correctly
+FIX: once setting up the appropriate fops table pointer for the opened file/directory/device, we called associated open() call from  the mapped fops table
+
+/*****Terminal driver bugs********/
+BUG: Erroneous spaces occurred while typing in the terminal.
+FIX: The keyboard interrupt handler did not have a case for keys being
+	 released, so every time the scancode for a released key came in, the default was to print a space.  The default case was changed to print nothing.
+
+BUG: Text does not automatically go to a new line when typing in the
+	 terminal and space runs out.
+FIX: In the given function putc(), lines 193 and 194 were flipped.  This 
+	 ensured that the screen_y coordinate is updated to reflect the new line before screen_x is adjusted to the beginning of that line.
+NOTE: This bug was eliminated in Justin's terminal driver
+
+BUG: Backspace is overwriting the line header in the terminal, and also 
+	 causing a page fault error when backspacing from the first line.
+FIX: A check was implemented in the backspace handler function to check if 
+     the current character is the first after the line header.  If it is,
+     the backspace is not executed.
+
+--------------------------------------------------------------3.4----------------------------------------------------------
+/***File System/System Calls***/
+BUG: Execute page faults every time
+FIX: The location of the process' user stack was incorrect.  Also, the 
+     esp0 value was also incorrect.  Changing the user stack location
+     to 132MB-4 and the kernel stack location to KSTACK_START-8KB*(PID+1)
+     fixed the issue.
+
+BUG: Arguments to execute are incorrect, causing execute fail
+FIX: In the int_handlers.S file, the arguments to the system calls 
+     were pushed on the stack from left to right, instead of left to right.
+     Reversing the order resolved the issue.  
+
+BUG: Call to _vidmap() in fish() caused the program to terminate without completing due to incorrect error checking
+FIX: rather than checking to see whether *screen_start == NULL, we now error handle by checking if screen_start is NULL
+
+---------------------------------------------------------3.5---------------------------------------------------------------
+/***File System/System Calls***/
+BUG: When executing fish, the fish is displayed accross all terminals
+FIX: Vidmap was changed to map the video memory for fish into the storage 
+     buffer, instead of directly mapping the process to video memory.  Then,
+     each time a PIT interrupt is received, provided the current process'
+     terminal is the same as the current terminal, the contents of the storage
+     buffer are copied over to physical video memory.
+
+/***Terminal ***/
+BUG: When trying to switch terminals into a process which is already
+     running, there is a page fault
+FIX: There are two IRET's, one to go back to the kernel stack frame of the
+     process to resume, and one to go back into the user stack frame. 
+     Before the first IRET, the USER_CS address was pushed on the stack 
+     instead of the KERNEL_CS.  Pushing the KERNEL_CS resolved the issue.
+
+BUG: When executing fish from the bottom-most line of the terminal, none of the
+     fish (or sometimes only part of the fish) displays on the screen.
+FIX: When scrolling video memory, the ATTRIBUTE field of each display location  
+     was erroneously set to 0.  Changing this to 0x7 resolved the issue.
+
+BUG: When switching between terminals, the contents pulled from the buffer/page into video memory had repeating characters (i.e. if 3 was typed to screen before switching terminals, upon switching out of and back to the terminal where 3 was pressed, 33 would now show up)
+FIX: We were saving to the video buffer associated with each terminal twice upon writing to screen, causing the doubling of the characters displayed once switching from and back to that terminal
+
+
+
+: |
+
+
+
+Code Commenting
+ ( List the files that you are editing so others don’t edit the same code)
+- Try to clean up the code as much as possible(remove printf statements etc.)
+
+Justin - Terminal.c,sched.c,system_call.c,page.c,int_handlers_c.c
+Chris- rtc.c, i8259.c, int_handlers.s, file_sys.c 
+Evan-
+Ryan- pcb_struct.h, terminal.h, sched.h (2 lines?), page.h (also 2 lines), ???
+
+
+Error handling
+ ( List the files that you are editing so others don’t edit the same code)
+
+Justin -
+Chris- rtc.c, i8259.c, int_handlers.s, file_sys.c
+Evan-
+Ryan- 
+
+Current Bugs
+Grep slows down rtc or pit
+
+Call hello, fill the buffer completely, then press enter.  No newline is created.  Evan might be right here and we may need to put a newline at the end of the buffer on every return to correctly handle this case.  If so, then puskar is a liar 
+
+
+Tab is treated like a space in the line buffer
+
+ 
+Tab then characters doesnt display the “no such command”
+Caps lock on is not implemented correctly.  Caps lock on should not trigger !@#$% characters
+
+turn your caps lock on and hit 1
+

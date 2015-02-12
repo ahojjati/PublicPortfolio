@@ -1,0 +1,11 @@
+rtfreed2 total : 65/100
+Testing task1	15/15	
+	*Passed*	
+Testing task2	15/15	
+	*Passed*	
+Testing task3	35/35	
+	*Passed*	
+Testing task4	0/35	
+	*Failed*	
+Testing task5(bonus)	0/10	
+	*Failed*	

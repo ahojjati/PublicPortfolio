@@ -1,0 +1,24 @@
+#ifndef _file_sys_h
+#define _file_sys_h
+
+#include "types.h"
+#include "lib.h"
+
+
+
+//only read does anything
+int32_t fs_dir_open(char[], int);
+int32_t fs_dir_read(char[], int);
+int32_t fs_dir_write(char[], int);
+int32_t fs_dir_close(char[], int);
+
+
+//only read does anything
+int32_t fs_open(char[], int);
+int32_t fs_read(char[], int);
+int32_t fs_write(char[], int);
+int32_t fs_close(char[], int);
+
+
+
+#endif

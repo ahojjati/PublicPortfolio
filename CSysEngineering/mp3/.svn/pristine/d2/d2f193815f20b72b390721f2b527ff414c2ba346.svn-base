@@ -1,0 +1,957 @@
+//File containing source code for terminal driver
+
+#include "terminal.h"
+
+term_t* curr_terminal;
+term_t terminal[NUM_TERM];
+
+void putc_storage(uint8_t c,term_t* terminal);
+void putc_screen(uint8_t c,term_t* terminal);
+void storage_scroll(term_t* terminal);
+void video_mem_scroll(term_t* terminal);
+
+
+// int write_lock = 0;
+
+// static uint8_t line_buf[128];
+// static uint8_t line_buf_index = 0;
+// static int wrap_flag;
+
+// extern int screen_y,screen_x;
+// extern char* terminal->video_mem;
+// extern volatile int term_read;
+/* Function to handle system calls for reading from the terminal
+ * PARAMETERS: fd - ???
+ *			   buf - a pointer to a buffer in which to write the data
+ *			   nbytes - not used by this function
+ * RETURNS: the number of bytes successfully read into the buffer
+ * INFO: This function reads bytes from the line buffer up until the
+ *		 newline character (\n).  If no newline character is present
+ *       than the entire buffer is read.  This function also clears
+ *		 the line buffer.  It is intended to be called mainly
+ *		 by the shell.
+ */
+int32_t terminal_read(int32_t fd, void * buf, int32_t nbytes)
+{
+	cli();
+ 	clear_line_buffer(current_process->terminal);
+ 	current_process->terminal->term_read = 1;
+ 	sti();
+ 	while(current_process->terminal->term_read == 1)
+ 	{
+
+ 	}
+ 	current_process->terminal->terminal_read_ret = current_process->terminal->line_buf_index;
+ 	memcpy(buf,(void*)current_process->terminal->line_buf,BUFFER_SIZE);
+ 	clear_line_buffer(current_process->terminal);
+	return current_process->terminal->terminal_read_ret;
+}
+
+/* Function to handle system calls for writing to the terminal
+ * PARAMETERS: fd - ???
+ 			   buf - a pointer to a buffer which contains the data to write
+ 			   nbytes - the number of bytes to write from the buffer
+ * RETURNS: the number of bytes successfully written, or -1 on failure
+ * INFO: This function sets the write_lock to 1 at the beginning of
+ *       exec
+ ution, and clears it before returning.  This will
+ *       allow user programs to block keyboard echoes while trying
+ *       to output information to the terminal.
+ */
+int32_t terminal_write(int32_t fd, const void * buf, int32_t nbytes)
+{
+	int32_t i;
+	uint8_t* _buf = (uint8_t*)buf;
+	//Check for valid pointer and valid n_bytes
+	if(buf == NULL || nbytes < 0)
+		return -1;
+    else
+    {
+    	current_process->terminal->write_lock = 1;
+        for(i=0; i<nbytes; i++)
+        {
+        	if(current_process->terminal == curr_terminal)
+       		{
+       			screen_add_char(_buf[i],current_process->terminal);
+       		}
+            storage_add_char(_buf[i],current_process->terminal);
+        }
+       	clear_line_buffer(current_process->terminal);
+       	current_process->terminal->write_lock = 0;
+        return i;
+    }
+}
+
+
+void copy_storage_to_vid(term_t* terminal)
+{
+    int32_t i;
+    for(i=0; i<(NUM_ROWS)*(NUM_COLS); i++)
+    {
+        *(uint8_t *)(terminal->video_mem + (i << 1)) = *(uint8_t *)(terminal->storage + (i << 1));
+        *(uint8_t *)(terminal->video_mem + (i << 1) + 1) = *(uint8_t *)(terminal->storage + (i << 1) + 1); 
+    }
+}
+
+/* Function to initialize the terminal
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 on failure
+ * INFO: clears the screen, executes the shell,
+ */
+int32_t terminal_open()
+{
+	return -1;
+}
+
+/* Function to close the terminal
+ * PARAMETERS: none
+ * RETURNS: -1 always, since the terminal should never be closed
+ * INFO: This function does nothing, since it should not be possible
+ *       for a system call to close the terminal
+ */
+int32_t terminal_close()
+{
+	//Terminal cannot be closed, so return -1
+	return -1;
+}
+
+/* Function to clear the screen and put the cursor at the top
+ * PARAMETERS: line_header - if 1, print a line header, if 0, clear
+ *                           the screen entirely
+ * RETURNS: void
+ * INFO: This function clears video memory associated with the terminal.
+ * NOTE: If scroll_up and scroll_down are implemented, this function
+ *       will move the data in video memory to a stack before clearing
+ *       it out.
+ */
+void clear_screen(term_t* terminal)
+{
+    int32_t i;
+    for(i=0; i<(NUM_ROWS)*(NUM_COLS); i++)
+    {
+        *(uint8_t *)(terminal->video_mem + (i << 1)) = ' ';
+        *(uint8_t *)(terminal->video_mem + (i << 1) + 1) = ATTRIB;
+    }
+	terminal->wrap_flag = 0;
+	terminal->screen_x = 0;
+	terminal->screen_y = 0;
+}
+
+/* Helper function which clears out the line buffer
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function fills the line buffer with all spaces
+ */
+void clear_line_buffer(term_t* terminal)
+{
+	int i;
+	for (i = 0; i < BUFFER_SIZE; ++i)
+	{
+		terminal->line_buf[i] = 0;
+	}
+	terminal->line_buf_index = 0;
+	return;
+
+}
+
+/* Helper function which writes a single charcter to the line buffer
+ * PARAMETERS: c - the character to write
+ * RETURNS: 0 on success, -1 on failure (ie. line buf is full)
+ * INFO: This function will not write to the line buffer if it is
+ *       already full.
+ */
+int line_buffer_add(uint8_t c,term_t* terminal)
+{
+	if(terminal->line_buf_index < BUFFER_SIZE)
+	{
+		terminal->line_buf[terminal->line_buf_index] = c;
+		terminal->line_buf_index++;
+		return 0;
+	}
+	else
+		return -1;
+}
+
+/* Function that adds characters to the screen
+ * PARAMETERS: c - the character to write
+ * RETURNS: 0 on success, -1 on failure (ie. line buf is full)
+ * INFO: I pretty much made a truth table because there were too many conflicting edge cases. 
+ */
+
+void storage_add_char(uint8_t c, term_t* terminal)
+{
+//printf("screen_x = %d and screen_y = %d and c= %d", screen_x,screen_y,wrap_flag);
+	if(terminal->line_buf_index < BUFFER_SIZE)
+	{
+		//Read these if statments like a truth table
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1) 
+		{	
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			putc_storage(10,terminal); //emulate a new line
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			putc_storage(10,terminal); //emulate a new line
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			terminal->wrap_flag = 1;
+			return;
+
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			putc_storage(10,terminal); //emulate a new line
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			putc_storage(10,terminal); //emulate a new line
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+	}
+	else
+	{
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_storage(c,terminal);
+			terminal->wrap_flag = 0;
+			putc(c);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_storage(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			storage_scroll(terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+	}
+	return;
+}
+
+void screen_add_char(uint8_t c,term_t* terminal)
+{
+//printf("screen_x = %d and screen_y = %d and c= %d", screen_x,screen_y,wrap_flag);
+	if(terminal->line_buf_index < BUFFER_SIZE)
+	{
+		//Read these if statments like a truth table
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1) 
+		{	
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			putc_screen(10,terminal); //emulate a new line
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			putc_screen(10,terminal); //emulate a new line
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			terminal->wrap_flag = 1;
+			return;
+
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			putc_screen(10,terminal); //emulate a new line
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			putc_screen(10,terminal); //emulate a new line
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			terminal->wrap_flag = 1;
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+
+		if(c != '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+	}
+	else
+	{
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			putc_screen(c,terminal);
+			terminal->wrap_flag = 0;
+			putc(c);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x != 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x == NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag !=1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			putc_screen(c,terminal);
+			terminal->screen_y = NUM_ROWS-1;
+			video_mem_scroll(terminal);
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y != NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+
+
+		if(c == '\n' && terminal->screen_x == 0 && terminal->wrap_flag ==1 && terminal->screen_y == NUM_ROWS-1 && terminal->screen_x != NUM_COLS-1)
+		{
+			terminal->wrap_flag = 0;
+			return;
+		}
+	}
+	return;
+}
+
+/* Function to scroll the screen up if text reaches the bottom
+ * PARAMETERS: none
+ * RETURNS: void
+ * INFO: This function creates a blank line in the bottomost row in the
+ *       terminal, and shifts all other data upwards in video memory.
+ *       It does NOT p-rint a line header...leave it to the caller.
+ * NOTE: If arrow key scrolling is implemented, this function will
+ *       have to be modified to save the topmost row of video memory
+ *       to a buffer/stack.
+ *
+ *   	Do We need to double buffer this somehow that way the screen does not lag at all?
+ */
+void storage_scroll(term_t* terminal)
+{
+	int i, j;
+	//Shift data upwards in video memory
+	for(i=0; i<NUM_COLS; i++)
+	{
+		for(j=0; j<NUM_ROWS-1; j++)
+		{
+		*(uint8_t *)(terminal->storage+ ((NUM_COLS*j + i) << 1)) = *(uint8_t *)(terminal->storage+ ((NUM_COLS*(j+1) + i) << 1));
+        *(uint8_t *)(terminal->storage+ ((NUM_COLS*j + i) << 1) + 1) = *(uint8_t *)(terminal->storage + ((NUM_COLS*(j+1) + i) << 1) + 1);
+		}
+	}
+	for(i=0; i<NUM_COLS; i++)
+	{
+		for(j=NUM_ROWS-1; j<NUM_ROWS; j++)
+			{
+			*(uint8_t *)(terminal->storage+ ((NUM_COLS*j + i) << 1)) = 0;
+       		 *(uint8_t *)(terminal->storage+ ((NUM_COLS*j + i) << 1) + 1) = 0;
+			}
+	}
+}
+
+void video_mem_scroll(term_t* terminal)
+{
+	int i, j;
+	//Shift data upwards in video memory
+	for(i=0; i<NUM_COLS; i++)
+	{
+		for(j=0; j<NUM_ROWS-1; j++)
+		{
+		*(uint8_t *)(terminal->video_mem+ ((NUM_COLS*j + i) << 1)) = *(uint8_t *)(terminal->video_mem+ ((NUM_COLS*(j+1) + i) << 1));
+        *(uint8_t *)(terminal->video_mem+ ((NUM_COLS*j + i) << 1) + 1) = *(uint8_t *)(terminal->video_mem + ((NUM_COLS*(j+1) + i) << 1) + 1);
+		}
+	}
+	for(i=0; i<NUM_COLS; i++)
+	{
+		for(j=NUM_ROWS-1; j<NUM_ROWS; j++)
+			{
+			*(uint8_t *)(terminal->video_mem + ((NUM_COLS*j + i) << 1)) = 0;
+       		 *(uint8_t *)(terminal->video_mem + ((NUM_COLS*j + i) << 1) + 1) = 0;
+			}
+	}
+}
+
+
+void putc_storage(uint8_t c,term_t* terminal)
+{
+    if(c == '\n' || c == '\r') {
+        terminal->screen_y++;
+        terminal->screen_x=0;
+    } else {
+        *(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = c;
+        *(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = ATTRIB;
+        terminal->screen_x++;
+        terminal->screen_x %= NUM_COLS;
+        terminal->screen_y = (terminal->screen_y + (terminal->screen_x / NUM_COLS)) % NUM_ROWS;
+    }
+}
+
+void putc_screen(uint8_t c,term_t* terminal)
+{
+    if(c == '\n' || c == '\r') {
+    	// DO NOTHING
+    } else {
+        *(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = c;
+        *(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = ATTRIB;
+    }
+}
+
+void storage_delete_char(term_t* terminal)
+{
+	if(terminal->line_buf_index == 0)
+		return ;
+	if(terminal->screen_x == 0)
+	{
+		terminal->screen_y--;
+		terminal->screen_x = NUM_COLS -1;
+		 *(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = 0;
+    	 *(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = 0;
+ 	}
+ 	else 
+ 	{	
+ 		terminal->screen_x --;
+ 		*(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = 0;
+    	*(uint8_t *)(terminal->storage + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = 0;
+ 	}
+     return;
+}
+
+void screen_delete(term_t* terminal)
+{
+	if(terminal->line_buf_index == 0)
+		return;
+	if(terminal->screen_x == 0)
+	{
+		 *(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = 0;
+    	 *(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = 0;
+ 	}
+ 	else 
+ 	{	
+ 		*(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1)) = 0;
+    	*(uint8_t *)(terminal->video_mem + ((NUM_COLS*terminal->screen_y + terminal->screen_x) << 1) + 1) = 0;
+ 	}
+     return;
+}
+
+
+
+
+/* Helper function which removes a single character from the line buffer
+ * PARAMETERS: none
+ * RETURNS: 0 on success, -1 if the buffer is empty (nothing to delete)
+ * INFO: This function is called when backspace is pressed.  If there
+ */
+int line_buffer_delete(term_t* terminal)
+{
+	//printf("line buf = %d \n \n",line_buf_index);
+	if(terminal->line_buf_index == 0)
+		return -1;
+	else
+	{
+		terminal->line_buf_index--;
+		terminal->line_buf[terminal->line_buf_index] = 0;
+		return 0;
+	}
+}
+
+void terminal_change(int terminal_num)
+{
+	int i;
+	curr_terminal = &terminal[terminal_num];
+	for(i=0; i<NUM_ROWS*NUM_COLS; i++)
+    {
+        *(uint8_t *)(curr_terminal->video_mem + (i << 1)) = *(uint8_t *)(curr_terminal->storage + (i << 1));
+        *(uint8_t *)(curr_terminal->video_mem + (i << 1) + 1) = *(uint8_t *)(curr_terminal->storage + (i << 1) + 1); 
+    }
+}
+
+void init_terminals()
+{
+	int i,j;
+	for(i = 0; i< NUM_TERM; i++)
+	{
+		for(j=0;j<BUFF_SIZE;j++)
+		{
+			terminal[i].line_buf[i] = 0;
+		}
+		terminal[i].line_buf_index = 0;
+		terminal[i].wrap_flag = 0;
+		terminal[i].screen_x = 0;
+		terminal[i].screen_y = 0;
+		terminal[i].video_mem = (uint8_t*)VMEM_START;
+		switch(i)
+		{
+			case 0:
+			terminal[i].storage =  (uint8_t*)VIDEO_0;
+			break;
+
+			case 1:
+			terminal[i].storage =  (uint8_t*)VIDEO_1;
+			break;
+
+			case 2:
+			terminal[i].storage =  (uint8_t*)VIDEO_2;
+			break;
+		}
+		clear_storage(&terminal[i]);
+		terminal[i].term_read = 0;
+		terminal[i].write_lock = 0;
+		terminal[i].terminal_read_ret = 0;
+	}
+	curr_terminal = &terminal[0];
+}
+
+void
+clear_storage(term_t* terminal)
+{
+    int32_t i;
+    for(i=0; i<NUM_ROWS*NUM_COLS; i++) {
+        *(uint8_t *)(terminal->storage + (i << 1)) = ' ';
+        *(uint8_t *)(terminal->storage + (i << 1) + 1) = ATTRIB;
+    }
+}

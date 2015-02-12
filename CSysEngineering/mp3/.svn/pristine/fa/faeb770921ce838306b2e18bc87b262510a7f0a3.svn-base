@@ -1,0 +1,39 @@
+#ifndef _SYSTEM_CALL_H
+#define _SYSTEM_CALL_H
+
+#define HALT 	1
+#define EXEC 	2
+#define OPEN 	3
+#define READ 	4
+#define WRIT 	5
+#define CLOS 	6
+
+
+#include "types.h"
+#include "file_sys.h"
+#include "rtc.h"
+#include "terminal.h"
+#include "x86_desc.h"
+
+#define BUFF_SIZE 128
+#define FILE_HEADER_SIZE 52
+#define PROCESS_START_ADDR 24
+#define START_ADDR_OFFSET 3
+#define BYTE 8
+
+
+//System calls
+int32_t _halt (uint8_t status);
+int32_t _execute (const uint8_t* command);
+int32_t _read (int32_t fd,void* buf,int32_t nbytes);
+int32_t _write (int32_t fd, const void* buf, int32_t nbytes);
+int32_t _open (const uint8_t* filename);
+int32_t _close (int32_t fd);
+int32_t _getargs (uint8_t* buf, uint32_t nbytes);
+int32_t _vidmap (uint8_t** screen_start);
+int32_t _set_handler (int32_t signum, void* handler_address); //Extra Credit
+int32_t _sigreturn (void);	//Extra Credit
+uint32_t init_pcb();
+void init_file_ops();
+
+#endif /*_SYSTEM_CALL_H*/

@@ -1,0 +1,13 @@
+#ifndef _PAGE_H
+#define _PAGE_H
+
+#define ENABLE_MASK         0x80000000
+#define NUM_KILO            1024
+#define NUM_PAGES           1
+
+void init_pages();
+void init_page_dir();
+void init_page_tab();
+
+
+#endif
